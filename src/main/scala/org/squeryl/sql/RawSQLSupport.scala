@@ -16,27 +16,58 @@ trait RawSQLSupport{
   def shardedSessionCache : ShardedSessionCache
 
   def execute[T](shardName : String)(func : DAO => T) : T = {
-    val session = shardedSessionCache.getSession(shardName,ShardMode.Write)
+    val s = shardedSessionCache.getSession(shardName,ShardMode.Write)
     
-    session.use()
-    session.beginTransaction()
+    s.use()
+    s.beginTransaction()
+
     var txOk = false
-    
     try{
-      val connection = session.connection
+      val connection = s.connection
       val dao = new DAO(connection)
-      val r = func(dao)
+      val r = _using[T](s, () => func(dao))
+      s.commitTransaction()
+      if(s.safeClose){
+        shardedSessionCache.removeSession(s)
+      }
       txOk = true
       r
-    }finally{
-      if(txOk){
-        session.commitTransaction()
-      }else{
-        session.rollback()
+    }catch{
+      case e : Exception => {
+        _ignoreException(s.rollback())
+        _ignoreException(s.forceClose())
+        _ignoreException(shardedSessionCache.removeSession(s))
+        throw e
       }
-      if(session.safeClose()){
-        shardedSessionCache.removeSession(session)
+    }
+  }
+
+
+  @inline
+  private def _ignoreException(func : => Unit) = {
+    try{
+      func
+    }catch{
+      case e : Exception => e.printStackTrace()
+    }
+  }
+
+  private def _using[A](session: ShardedSession, a: ()=>A): A = {
+    val s = Session.currentSessionOption
+    try {
+      if(s != None) s.get.unbindFromCurrentThread
+      try {
+        session.bindToCurrentThread
+        val r = a()
+        r
       }
+      finally {
+        session.unbindFromCurrentThread
+        session.cleanup
+      }
+    }
+    finally {
+      if(s != None) s.get.bindToCurrentThread
     }
   }
 

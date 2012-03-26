@@ -83,7 +83,6 @@ trait ShardingDsl {
     }catch{
       case e : Exception => e.printStackTrace()
     }
-    
   }
 
   private def _using[A](session: ShardedSession, a: ()=>A): A = {
