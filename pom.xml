@@ -1,7 +1,7 @@
 <project xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://maven.apache.org/POM/4.0.0">
     <modelVersion>4.0.0</modelVersion>
     <groupId>org.squeryl</groupId>
-    <artifactId>squeryl_${scala.version}</artifactId>
+    <artifactId>squeryl_2.9.1</artifactId>
     <packaging>jar</packaging>
     <description>squeryl</description>
     <version>0.9.6-shard-SNAPSHOT</version>
@@ -16,33 +16,9 @@
             <distribution>repo</distribution>
         </license>
     </licenses>
-    <profiles>
-        <profile>
-            <id>scala2.9.0</id>
-            <activation>
-                <property>
-                    <name>scala.version</name>
-                    <value>2.9.0</value>
-                </property>
-            </activation>
-            <properties>
-                <scala.version>2.9.0</scala.version>
-            </properties>
-        </profile>
-        <profile>
-            <id>scala2.9.1</id>
-            <activation>
-                <activeByDefault>true</activeByDefault>
-                <property>
-                    <name>scala.version</name>
-                    <value>2.9.1</value>
-                </property>
-            </activation>
-            <properties>
-                <scala.version>2.9.1</scala.version>
-            </properties>
-        </profile>
-    </profiles>
+    <properties>
+        <scala.version>2.9.1</scala.version>
+    </properties>
     <dependencies>
         <dependency>
             <groupId>org.scala-lang</groupId>
