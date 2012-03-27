@@ -23,9 +23,11 @@ trait RawSQLSupport{
 
     var txOk = false
     try{
-      val connection = s.connection
-      val dao = new DAO(connection)
-      val r = _using[T](s, () => func(dao))
+      val r = _using[T](s, () => {
+        val connection = s.connection
+        val dao = new DAO(connection)
+        func(dao)
+      })
       s.commitTransaction()
       if(s.safeClose){
         shardedSessionCache.removeSession(s)
