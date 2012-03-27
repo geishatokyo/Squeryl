@@ -25,6 +25,12 @@
                     <value>2.9.0</value>
                 </property>
             </activation>
+            <activation>
+                <property>
+                    <name>scala.version</name>
+                    <value>2.9.0</value>
+                </property>
+            </activation>
             <properties>
                 <scala.version>2.9.0</scala.version>
             </properties>
@@ -33,6 +39,12 @@
             <id>scala2.9.1</id>
             <activation>
                 <activeByDefault>true</activeByDefault>
+            <activation>
+                <property>
+                    <name>scala.version</name>
+                    <value>2.9.1</value>
+                </property>
+            </activation>
                 <property>
                     <name>scala.version</name>
                     <value>2.9.1</value>
@@ -176,4 +188,15 @@
             </plugin>
         </plugins>
     </build>
+    
+    <distributionManagement>
+        <repository>
+            <id>geishatokyo-releases</id>
+            <url>${deploy-release}</url>
+        </repository>
+        <snapshotRepository>
+            <id>geishatokyo-snapshots</id>
+            <url>${deploy-snapshot}</url>
+        </snapshotRepository>
+    </distributionManagement>
 </project>
