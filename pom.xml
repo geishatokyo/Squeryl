@@ -159,6 +159,7 @@
                         <include>**/*Suite.*</include>
                         <include>**/*Spec.*</include>
                     </includes>
+                    <failIfNoTests>false</failIfNoTests>
                 </configuration>
             </plugin>
             <plugin>
