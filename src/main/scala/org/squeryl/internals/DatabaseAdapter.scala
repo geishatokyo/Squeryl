@@ -404,9 +404,9 @@ trait DatabaseAdapter {
     if(v.isInstanceOf[Product1[_]])
        v = v.asInstanceOf[Product1[Any]]._1.asInstanceOf[AnyRef]
 
-    if(v.isInstanceOf[java.util.Date] && ! v.isInstanceOf[java.sql.Date]  && ! v.isInstanceOf[Timestamp])
+    /*if(v.isInstanceOf[java.util.Date] && ! v.isInstanceOf[java.sql.Date]  && ! v.isInstanceOf[Timestamp])
        v = new java.sql.Date(v.asInstanceOf[java.util.Date].getTime)
-    else if(v.isInstanceOf[scala.math.BigDecimal])
+    else */if(v.isInstanceOf[scala.math.BigDecimal])
        v = v.asInstanceOf[scala.math.BigDecimal].bigDecimal
     else if(v.isInstanceOf[scala.Enumeration#Value])
        v = v.asInstanceOf[scala.Enumeration#Value].id.asInstanceOf[AnyRef]
