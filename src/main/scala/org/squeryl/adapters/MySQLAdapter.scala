@@ -30,7 +30,6 @@ class MySQLAdapter extends DatabaseAdapter {
 
   override def timestampTypeDeclaration = "datetime"
 
-  override def dateTypeDeclaration = "datetime"
 
   override def writeForeignKeyDeclaration(
     foreignKeyTable: Table[_], foreignKeyColumnName: String,

@@ -24,7 +24,8 @@ trait FieldTypeHandler[T] {
   private def isBoolean(t: Class[_]) = t.isAssignableFrom(classOf[Boolean]) || t.isAssignableFrom(classOf[java.lang.Boolean])
   private def isDouble(t: Class[_]) = t.isAssignableFrom(classOf[Double]) || t.isAssignableFrom(classOf[java.lang.Double])
   private def isFloat(t: Class[_]) = t.isAssignableFrom(classOf[Float]) || t.isAssignableFrom(classOf[java.lang.Float])
-  private def isDate(t: Class[_]) = classOf[java.util.Date].isAssignableFrom(t)
+  private def isDate(t: Class[_]) = classOf[java.sql.Date].isAssignableFrom(t)
+  private def isJavaDate(t : Class[_]) = classOf[java.util.Date].isAssignableFrom(t)
   private def isBigDecimal(t: Class[_]) = t.isAssignableFrom(classOf[scala.math.BigDecimal]) || t.isAssignableFrom(classOf[java.math.BigDecimal])
   private def isTimestamp(t: Class[_]) = classOf[java.sql.Timestamp].isAssignableFrom(t)
   private def isBinary(t: Class[_]) = t.isAssignableFrom(classOf[Array[Byte]])
@@ -47,10 +48,12 @@ trait FieldTypeHandler[T] {
         handleDoubleType
       else if(isFloat(t))  
         handleFloatType
-      else if(isTimestamp(t))
-        handleTimestampType
       else if(isDate(t))
         handleDateType
+      else if(isTimestamp(t))
+        handleTimestampType
+      else if(isJavaDate(t))
+        handleJavaDateType
       else if(isBinary(t))
         handleBinaryType
       else if(isEnumerationValueType(t))
@@ -67,6 +70,7 @@ trait FieldTypeHandler[T] {
   protected def handleBooleanType : T
   protected def handleDoubleType : T
   protected def handleDateType: T
+  protected def handleJavaDateType : T
   protected def handleLongType: T
   protected def handleFloatType: T
   protected def handleBigDecimalType(fmd: Option[FieldMetaData]): T

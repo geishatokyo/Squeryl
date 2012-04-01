@@ -49,7 +49,6 @@ class H2Adapter extends DatabaseAdapter {
   }
 
 
-  override def dateTypeDeclaration = "TIMESTAMP"
 
   override def isTableDoesNotExistException(e: SQLException): Boolean =
     e.getErrorCode == 42102

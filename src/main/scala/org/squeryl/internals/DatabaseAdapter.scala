@@ -194,6 +194,7 @@ trait DatabaseAdapter {
     def handleBooleanType = booleanTypeDeclaration
     def handleDoubleType = doubleTypeDeclaration
     def handleDateType = dateTypeDeclaration
+    def handleJavaDateType = timestampTypeDeclaration
     def handleLongType = longTypeDeclaration
     def handleFloatType = floatTypeDeclaration
     def handleBigDecimalType(fmd: Option[FieldMetaData]) =

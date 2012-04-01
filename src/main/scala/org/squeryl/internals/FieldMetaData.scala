@@ -32,6 +32,7 @@ import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.lang.reflect.Member
 import scala.tools.scalap.scalax.rules.scalasig.ScalaSigParser
+import java.util.Date
 
 class FieldMetaData(
         val parentMetaData: PosoMetaData[_],
@@ -375,6 +376,7 @@ object FieldMetaData {
     def handleBooleanType = true
     def handleDoubleType = true
     def handleDateType = true
+    def handleJavaDateType = true
     def handleLongType = true
     def handleFloatType = true
     def handleBigDecimalType(fmd: Option[FieldMetaData]) = true
@@ -560,6 +562,7 @@ object FieldMetaData {
     def handleBooleanType = 1
     def handleDoubleType = 8
     def handleDateType = -1
+    def handleJavaDateType = -1
     def handleLongType = 8
     def handleFloatType = 4
     def handleBigDecimalType(fmd: Option[FieldMetaData]) = fmd.get.schema.defaultSizeOfBigDecimal._1
@@ -577,7 +580,8 @@ object FieldMetaData {
     def handleStringType(fmd: Option[FieldMetaData])  = ""
     def handleBooleanType = new java.lang.Boolean(false)
     def handleDoubleType = new java.lang.Double(0.0)
-    def handleDateType = new java.util.Date()
+    def handleDateType = new java.sql.Date(0)
+    def handleJavaDateType = new java.util.Date()
     def handleLongType = new java.lang.Long(0)
     def handleFloatType = new java.lang.Float(0)
     def handleBigDecimalType(fmd: Option[FieldMetaData]) = new scala.math.BigDecimal(java.math.BigDecimal.ZERO)
@@ -607,6 +611,11 @@ object FieldMetaData {
     val _booleanM = (rs:ResultSet,i:Int) => _handleNull(rs, rs.getBoolean(i))
     //(rs:ResultSet,i:Int) => Session.currentSession.databaseAdapter.convertToBooleanForJdbc(rs, i)
     val _dateM =    (rs:ResultSet,i:Int) => _handleNull(rs, rs.getDate(i))
+    val _javaDateM =    (rs:ResultSet,i:Int) => _handleNull(rs, {
+      val s = rs.getTimestamp(i)
+      if(s == null) null
+      else new java.util.Date(s.getTime)
+    })
     val _longM =    (rs:ResultSet,i:Int) => _handleNull(rs, rs.getLong(i))
     val _floatM =   (rs:ResultSet,i:Int) => _handleNull(rs, rs.getFloat(i))
     val _bigDecM =  (rs:ResultSet,i:Int) => _handleNull(rs, new scala.math.BigDecimal(rs.getBigDecimal(i)))
@@ -624,6 +633,7 @@ object FieldMetaData {
     def handleBooleanType = _booleanM
     def handleDoubleType = _doubleM
     def handleDateType = _dateM
+    def handleJavaDateType = _javaDateM
     def handleFloatType = _floatM
     def handleLongType = _longM
     def handleBigDecimalType = _bigDecM
