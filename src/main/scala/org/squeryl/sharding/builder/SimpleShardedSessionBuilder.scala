@@ -49,7 +49,7 @@ class SimpleShardedSessionBuilder extends ShardedSessionBuilder{
   }
 
   def addReader(url : String , username : String , password : String) : SimpleShardedSessionBuilder = {
-    readerConfigs = readerConfigs :+ new DatabaseConfig(url,Some(username),Some(password))
+    readerConfigs = readerConfigs :+ new DatabaseConfig(url,Option(username),Option(password))
     this
   }
   def addReader(url : String) : SimpleShardedSessionBuilder = {
@@ -61,7 +61,7 @@ class SimpleShardedSessionBuilder extends ShardedSessionBuilder{
     this
   }
   def addWriter(url : String , username : String , password : String) : SimpleShardedSessionBuilder = {
-    writerConfigs = writerConfigs :+ new DatabaseConfig(url,Some(username),Some(password))
+    writerConfigs = writerConfigs :+ new DatabaseConfig(url,Option(username),Option(password))
     this
   }
   def addWriter(url : String) : SimpleShardedSessionBuilder = {
