@@ -14,7 +14,7 @@ import org.squeryl.{SquerylException, SessionFactory, Session}
  * To change this template use File | Settings | File Templates.
  */
 
-class DatabaseConfig(
+case class DatabaseConfig(
   var url : String,                       
   var username : Option[String] = None,
   var password : Option[String] = None  ){
