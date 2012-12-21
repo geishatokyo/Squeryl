@@ -1,9 +1,9 @@
 
 name := "squeryl"
 
-organization := "org.squeryl"
+organization := "com.geishatokyo.squeryl"
 
-version := "0.9.6-shard-SNAPSHOT"
+version := "0.9.6-SNAPSHOT"
 
 version <<= version { v => 
   val snapshot = Option(System.getProperty("snapshot")) == Some("true")
