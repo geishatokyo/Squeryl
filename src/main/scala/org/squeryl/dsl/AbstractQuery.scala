@@ -103,7 +103,6 @@ abstract class AbstractQuery[R](val isRoot:Boolean) extends Query[R] {
     val qen = new QueryExpressionNode[R](this, qy, subQueries, views)
     val (sl,d) = qy.invokeYieldForAst(qen, resultSetMapper)
     qen.setOutExpressionNodesAndSample(sl, d)
-    qen.propagateOuterScope()
 
 //    sl.filter(_.isInstanceOf[ExportedSelectElement]).
 //       map(_.asInstanceOf[ExportedSelectElement]).
@@ -153,7 +152,7 @@ abstract class AbstractQuery[R](val isRoot:Boolean) extends Query[R] {
 
   private def _dbAdapter = Session.currentSession.databaseAdapter
 
-  override def iterator = new Iterator[R] with Closeable {
+  def iterator = new Iterator[R] with Closeable {
 
     val sw = new StatementWriter(false, _dbAdapter)
     ast.write(sw)
@@ -205,7 +204,7 @@ abstract class AbstractQuery[R](val isRoot:Boolean) extends Query[R] {
       if(!_nextCalled)
         _next
       if(!_hasNext)
-        org.squeryl.internals.Utils.throwError("next called with no rows available")
+        throw new NoSuchElementException("next called with no rows available")
       _nextCalled = false
 
       if(s.isLoggingEnabled)

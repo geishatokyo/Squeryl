@@ -15,15 +15,16 @@
  ***************************************************************************** */
 package org.squeryl.internals
 
-import java.lang.reflect.Method
 import net.sf.cglib.proxy._
 import collection.mutable.{HashSet, ArrayBuffer}
 import org.squeryl.dsl.ast._
 import org.squeryl.dsl.CompositeKey
+import org.squeryl.dsl.TypedExpression
+import java.lang.reflect.{Field, Method}
 
 object FieldReferenceLinker {
 
-  def pushExpressionOrCollectValue[T](e: ()=>TypedExpressionNode[T]): T = {
+  def pushExpressionOrCollectValue[T](e: ()=>TypedExpression[T,_]): T = {
     if (isYieldInspectionMode) {
       val yi = _yieldInspectionTL.get
       val expr = yi.callWithoutReentrance(e)
@@ -157,9 +158,9 @@ object FieldReferenceLinker {
     res
   }
 
-  private def _takeLastAccessedUntypedFieldReference: SelectElementReference[_] =
+  private def _takeLastAccessedUntypedFieldReference: SelectElementReference[_,_] =
     FieldReferenceLinker.takeLastAccessedFieldReference match {
-      case Some(n:SelectElement) => new SelectElementReference(n)(NoOpOutMapper)
+      case Some(n:SelectElement) => new SelectElementReference(n,NoOpOutMapper)
       case None => org.squeryl.internals.Utils.throwError("Thread local does not have a last accessed field... this is a severe bug !")
   }
 
@@ -176,7 +177,7 @@ object FieldReferenceLinker {
 
     new BinaryOperatorNodeLogicalBoolean(
       fr,
-      new InputOnlyConstantExpressionNode[Any](c),
+      new InputOnlyConstantExpressionNode(c),
       "=")
   }
   
@@ -208,9 +209,8 @@ object FieldReferenceLinker {
       if(res0 == null)
         org.squeryl.internals.Utils.throwError("query " + q + " yielded null")
 
-      val visitedSet = new HashSet[Int]
-      //val visitedSet = new HashSet[AnyRef]
-      
+      val visitedSet = new java.util.IdentityHashMap[AnyRef, AnyRef]
+        
       _populateSelectColsRecurse(visitedSet, yi, q, res0)
 
       result = (yi.outExpressions, res0)
@@ -220,51 +220,67 @@ object FieldReferenceLinker {
     }
     result
   }
-
-  private def _populateSelectColsRecurse(visited: HashSet[Int] , yi: YieldInspection,q: QueryExpressionElements, o: AnyRef):Unit = {
-
-    if(o == null)
-      return
-
-    val idHashCode = System.identityHashCode(o)
-
-    if(visited.contains(idHashCode))
-      return
-
-    val clazz = o.getClass
-    val clazzName = clazz.getName
-    if(clazzName.startsWith("java.") || clazzName.startsWith("net.sf.cglib.") || clazzName.startsWith("scala.Enumeration"))
-      return
-
-    visited.add(idHashCode)
-    
-    _populateSelectCols(yi, q, o)
-    for(f <- clazz.getDeclaredFields) {
-      f.setAccessible(true);
-      val ob = f.get(o)
-
-      // don't follow closures 
-      if(!(f.getType.getName.startsWith("scala.Function") || FieldMetaData.factory.hideFromYieldInspection(o, f)))
-        _populateSelectColsRecurse(visited, yi, q, ob)
-    }
+  
+  /*
+   * The theory here is that setting the var is an atomic operation, so
+   * it should be ok to perform without synchronization.
+   * Worst case scenario would be that one thread overwrites the map
+   * created by a previous thread, but since it's just a cache and the fields
+   * can be retrieved at any time, that's ok.
+   */
+  private object _declaredFieldCache {
+  
+	  @volatile var _cache: Map[Class[_], Array[Field]] =
+			  Map[Class[_], Array[Field]]()
+			  
+	  def apply(cls: Class[_]) =
+	    _cache.get(cls) getOrElse {
+	      val declaredFields = cls.getDeclaredFields()
+	      _cache += ((cls, declaredFields))
+	      declaredFields
+	    }
+	  
   }
+
+  private def _populateSelectColsRecurse(visited: java.util.IdentityHashMap[AnyRef, AnyRef] , yi: YieldInspection,q: QueryExpressionElements, o: AnyRef): Unit =
+	  if(o != null && o != None) {
+		  if(!visited.containsKey(o)) {
+			  val clazz = o.getClass
+			  val clazzName = clazz.getName
+			  //println("Looking at " + clazzName)
+			  if(!clazzName.startsWith("java.") && 
+					  !clazzName.startsWith("net.sf.cglib.") && 
+					  !clazzName.startsWith("scala.Enumeration")) {
+				  visited.put(o,o)
+				  _populateSelectCols(yi, q, o)
+				  for(f <- _declaredFieldCache(clazz)) {
+					  f.setAccessible(true);
+					  val ob = f.get(o)
+					  if(!f.getName.startsWith("CGLIB$") && 
+					        !f.getType.getName.startsWith("scala.Function") && 
+					        !FieldMetaData.factory.hideFromYieldInspection(o, f)) {
+						  _populateSelectColsRecurse(visited, yi, q, ob)
+					  }
+				  }
+			  }
+		  }
+	  }
+  
   
   private def _populateSelectCols(yi: YieldInspection,q: QueryExpressionElements, sample: AnyRef): Unit = {
-
     var owner = _findQENThatOwns(sample, q)
-    if(owner == None)
-      return
-
-    for(e <- owner.get.getOrCreateAllSelectElements(q))
-      yi.addSelectElement(e)
+    owner foreach { o =>
+      for(e <- o.getOrCreateAllSelectElements(q))
+    	  yi.addSelectElement(e)
+    }
   }
 
-  def findOwnerOfSample(s: Any): Option[QueryableExpressionNode] =
+  def findOwnerOfSample(s: AnyRef): Option[QueryableExpressionNode] =
 // TODO: could we enforce that Query[AnyVal] are not nested in some other way ?   
 //    if(s.isInstanceOf[AnyVal])
 //      org.squeryl.internals.Utils.throwError("A query that returns a AnyVal cannot be nested " + Utils.failSafeString(FieldReferenceLinker.inspectedQueryExpressionNode.toString))
 //    else
-     _findQENThatOwns(s.asInstanceOf[AnyRef], FieldReferenceLinker.inspectedQueryExpressionNode)
+     _findQENThatOwns(s, FieldReferenceLinker.inspectedQueryExpressionNode)
 
   private def _findQENThatOwns(sample: AnyRef, q: QueryExpressionElements): Option[QueryableExpressionNode] = {
 
@@ -307,7 +323,7 @@ object FieldReferenceLinker {
 
         if(isComposite && _compositeKeyMembers.get != null && _compositeKeyMembers.get.isDefined) {
           val ck = res.asInstanceOf[CompositeKey]
-          ck._members = Some(_compositeKeyMembers.get.get.map(new SelectElementReference[Any](_)(NoOpOutMapper)))
+          ck._members = Some(_compositeKeyMembers.get.get.map(new SelectElementReference[Any,Any](_,NoOpOutMapper)))
           ck._propertyName = Some(m.getName)
           _compositeKeyMembers.remove()
         }

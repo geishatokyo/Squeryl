@@ -4,6 +4,7 @@ import java.util.Date
 import org.squeryl.sharding.ShardedSchemaTester
 import org.scalatest.matchers.MustMatchers
 import org.squeryl.{PrimitiveTypeMode, Schema, KeyedEntity}
+import org.squeryl.PrimitiveTypeMode._
 
 /**
  *

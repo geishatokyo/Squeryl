@@ -26,7 +26,7 @@ trait ResultSetUtils {
   def dumpRow(rs:ResultSet) = {
     val md = rs.getMetaData
    (for(i <- 1 to md.getColumnCount)
-      yield ""+rs.getObject(i)+":"+_simpleClassName(md.getColumnClassName(i)))
+      yield "#" + i + "->"+rs.getObject(i)+":"+_simpleClassName(md.getColumnClassName(i)))
     .mkString("ResultSetRow:[",",","]")
   }
 
@@ -96,7 +96,7 @@ object NoOpOutMapper extends OutMapper[Any] {
 
   def doMap(rs: ResultSet) = sample
 
-  def sample = org.squeryl.internals.Utils.throwError(" cannot use NoOpOutMapper")
+  def sample = throw new UnsupportedOperationException(" cannot use NoOpOutMapper")
 
   override def typeOfExpressionToString = "NoOpOutMapper"  
 }

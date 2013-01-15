@@ -16,6 +16,7 @@
 package org.squeryl.internals
 
 import org.squeryl.dsl.ast._
+import org.squeryl.dsl._
 import org.squeryl._
 import dsl.CompositeKey
 import org.squeryl.{Schema, Session, Table}
@@ -180,28 +181,35 @@ trait DatabaseAdapter {
   def timestampTypeDeclaration = "timestamp"
   def binaryTypeDeclaration = "binary"
   def uuidTypeDeclaration = "char(36)"
-
+  def intArrayTypeDeclaration = intTypeDeclaration + "[]"
+  def longArrayTypeDeclaration = longTypeDeclaration + "[]"
+  def doubleArrayTypeDeclaration = doubleTypeDeclaration + "[]"
+    
+  def jdbcIntArrayCreationType = intTypeDeclaration
+  def jdbcLongArrayCreationType = longTypeDeclaration
+  def jdbcDoubleArrayCreationType = doubleTypeDeclaration
+    
+  final def arrayCreationType(ptype : Class[_]) : String = {
+    val rv = ptype.getName() match {
+      case "java.lang.Integer" => jdbcIntArrayCreationType
+      case "java.lang.Double" => jdbcDoubleArrayCreationType
+      case "java.lang.Long" => jdbcLongArrayCreationType
+      case _ => ""
+    }
+    rv
+  }
+    
+/*
   private val _declarationHandler = new FieldTypeHandler[String] {
 
     def handleIntType = intTypeDeclaration
     def handleStringType  = stringTypeDeclaration
-    def handleStringType(fmd: Option[FieldMetaData]) =
-      fmd match {
-        case Some(x) => stringTypeDeclaration(x.length)
-        case None => stringTypeDeclaration
-      }
-
     def handleBooleanType = booleanTypeDeclaration
     def handleDoubleType = doubleTypeDeclaration
     def handleDateType = dateTypeDeclaration
     def handleLongType = longTypeDeclaration
     def handleFloatType = floatTypeDeclaration
-    def handleBigDecimalType(fmd: Option[FieldMetaData]) =
-      fmd match {
-        case Some(x) => bigDecimalTypeDeclaration(x.length, x.scale)
-        case None => bigDecimalTypeDeclaration
-      }
-
+    def handleBigDecimalType = bigDecimalTypeDeclaration
     def handleTimestampType = timestampTypeDeclaration
     def handleBinaryType = binaryTypeDeclaration
     def handleUuidType = uuidTypeDeclaration
@@ -209,12 +217,19 @@ trait DatabaseAdapter {
     def handleUnknownType(c: Class[_]) =
       org.squeryl.internals.Utils.throwError("don't know how to map field type " + c.getName)
   }
-  
-  def databaseTypeFor(fmd: FieldMetaData) =
+*/  
+  def databaseTypeFor(fmd: FieldMetaData):String =
     fmd.explicitDbTypeDeclaration.getOrElse(
-      fmd.schema.columnTypeFor(fmd, fmd.parentMetaData.viewOrTable.asInstanceOf[Table[_]]).getOrElse(
-        _declarationHandler.handleType(fmd.wrappedFieldType, Some(fmd))
-      )
+      fmd.schema.columnTypeFor(fmd, fmd.parentMetaData.viewOrTable.asInstanceOf[Table[_]]).getOrElse {
+        val nativeJdbcType = fmd.nativeJdbcType
+          
+        if(classOf[String].isAssignableFrom(nativeJdbcType))
+          stringTypeDeclaration(fmd.length)
+        else if(classOf[BigDecimal].isAssignableFrom(nativeJdbcType))
+          bigDecimalTypeDeclaration(fmd.length, fmd.scale)
+        else             
+          databaseTypeFor(fmd.schema.fieldMapper, nativeJdbcType)        
+      }
     )
 
   def writeColumnDeclaration(fmd: FieldMetaData, isPrimaryKey: Boolean, schema: Schema): String = {
@@ -294,7 +309,7 @@ trait DatabaseAdapter {
     }
     catch {
       case e: SQLException =>
-          throw new RuntimeException(
+          throw SquerylSQLException(
             "Exception while executing statement : "+ e.getMessage+
            "\nerrorCode: " +
             e.getErrorCode + ", sqlState: " + e.getSQLState + "\n" +
@@ -312,7 +327,7 @@ trait DatabaseAdapter {
   protected def execFailSafeExecute(sw: StatementWriter, silenceException: SQLException => Boolean): Unit = {
     val s = Session.currentSession
     val c = s.connection
-    val stat = c.createStatement
+    val stat = createStatement(c)
     val sp =
       if(failureOfStatementRequiresRollback) Some(c.setSavepoint)
       else None
@@ -327,7 +342,7 @@ trait DatabaseAdapter {
         if(silenceException(e))
           sp.foreach(c.rollback(_))
         else
-          throw new RuntimeException(
+          throw SquerylSQLException(
             "Exception while executing statement,\n" +
             "SQLState:" + e.getSQLState + ", ErrorCode:" + e.getErrorCode + "\n :" +
             sw.statement, e)
@@ -349,20 +364,26 @@ trait DatabaseAdapter {
     _exec[A](s, sw, block, p)
   }
 
+  protected def prepareStatement(conn: Connection, statement: String): PreparedStatement =
+    conn.prepareStatement(statement)
+
+  protected def createStatement(conn: Connection): Statement =
+    conn.createStatement()
+
   def executeQuery(s: Session, sw: StatementWriter) = exec(s, sw) { params =>
-    val st = s.connection.prepareStatement(sw.statement)
+    val st = prepareStatement(s.connection, sw.statement)
     fillParamsInto(params, st)
     (st.executeQuery, st)
   }
 
   def executeUpdate(s: Session, sw: StatementWriter):(Int,PreparedStatement) = exec(s, sw) { params =>
-    val st = s.connection.prepareStatement(sw.statement)
+    val st = prepareStatement(s.connection, sw.statement)
     fillParamsInto(params, st)
     (st.executeUpdate, st)
   }
 
   def executeUpdateAndCloseStatement(s: Session, sw: StatementWriter): Int = exec(s, sw) { params =>
-    val st = s.connection.prepareStatement(sw.statement)
+    val st = prepareStatement(s.connection, sw.statement)
     fillParamsInto(params, st)
     try {
       st.executeUpdate
@@ -373,6 +394,8 @@ trait DatabaseAdapter {
   }
 
   def executeUpdateForInsert(s: Session, sw: StatementWriter, ps: PreparedStatement) = exec(s, sw) { params =>
+    if(s.isLoggingEnabled)
+      s.log(sw.toString)
     fillParamsInto(params, ps)
     ps.executeUpdate
   }
@@ -424,14 +447,14 @@ trait DatabaseAdapter {
   //with values at any time (via : a kind of prettyStatement method)
   protected def writeValue(o: AnyRef, fmd: FieldMetaData, sw: StatementWriter):String =
     if(sw.isForDisplay) {
-      val v = fmd.get(o)
+      val v = fmd.getNativeJdbcValue(o)
       if(v != null)
         v.toString
       else
         "null"
     }
     else {
-      sw.addParam(convertToJdbcValue(fmd.get(o)))
+      sw.addParam(convertToJdbcValue(fmd.getNativeJdbcValue(o)))
       "?"
     }
 
@@ -457,7 +480,7 @@ trait DatabaseAdapter {
   def createSequenceName(fmd: FieldMetaData) = 
     "s_" + fmd.parentMetaData.viewOrTable.name + "_" + fmd.columnName
 
-  def writeConcatFunctionCall(fn: FunctionNode[_], sw: StatementWriter) = {
+  def writeConcatFunctionCall(fn: FunctionNode, sw: StatementWriter) = {
     sw.write(fn.name)
     sw.write("(")
     sw.writeNodesWithSeparator(fn.args, ",", false)
@@ -490,14 +513,17 @@ trait DatabaseAdapter {
     sw.nextLine
     sw.indent
     
-    t.posoMetaData.primaryKey.getOrElse(org.squeryl.internals.Utils.throwError("writeUpdate was called on an object that does not extend from KeyedEntity[]")).fold(
+    t.posoMetaData.primaryKey.getOrElse(throw new UnsupportedOperationException("writeUpdate was called on an object that does not extend from KeyedEntity[]")).fold(
       pkMd => sw.write(quoteName(pkMd.columnName), " = ", writeValue(o_, pkMd, sw)),
       pkGetter => {
-        val astOfQuery4WhereClause = Utils.createQuery4WhereClause(t, (t0:T) =>
-          pkGetter.invoke(t0).asInstanceOf[CompositeKey].buildEquality(o.asInstanceOf[KeyedEntity[CompositeKey]].id))
+        Utils.createQuery4WhereClause(t, (t0:T) => {
+          val ck = pkGetter.invoke(t0).asInstanceOf[CompositeKey]
 
-        astOfQuery4WhereClause.inhibitAliasOnSelectElementReference = true
-        astOfQuery4WhereClause.whereClause.get.write(sw)
+          val fieldWhere = ck._fields map (fmd => quoteName(fmd.columnName) + " = " + writeValue(o_, fmd, sw))
+          sw.write(fieldWhere.mkString(" and "))
+
+          new EqualityExpression(new InputOnlyConstantExpressionNode(1), new InputOnlyConstantExpressionNode(1))
+        })
       }
     )
 
@@ -761,10 +787,47 @@ trait DatabaseAdapter {
     sw.write(quoteName(a))
   }
 
-  def databaseTypeFor(c: Class[_]) =
-    _declarationHandler.handleType(c, None)
+  def databaseTypeFor(fieldMapper: FieldMapper, c: Class[_]): String = {
+    val ar = fieldMapper.sampleValueFor(c)
+    val decl = 
+      if(ar.isInstanceOf[Enumeration#Value])                 
+        intTypeDeclaration
+      else if(classOf[String].isAssignableFrom(c))
+        stringTypeDeclaration                  
+      else if(ar.isInstanceOf[java.sql.Timestamp])
+        timestampTypeDeclaration                  
+      else if(ar.isInstanceOf[java.util.Date])
+        dateTypeDeclaration
+      else if(ar.isInstanceOf[java.lang.Integer])
+        intTypeDeclaration
+      else if(ar.isInstanceOf[java.lang.Long])
+        longTypeDeclaration
+      else if(ar.isInstanceOf[java.lang.Boolean])
+        booleanTypeDeclaration
+      else if(ar.isInstanceOf[java.lang.Double])
+        doubleTypeDeclaration
+      else if(ar.isInstanceOf[java.lang.Float])
+        floatTypeDeclaration
+      else if(ar.isInstanceOf[java.util.UUID])
+        uuidTypeDeclaration
+      else if(classOf[scala.Array[Byte]].isAssignableFrom(c))
+        binaryTypeDeclaration
+      else if(classOf[BigDecimal].isAssignableFrom(c))
+        bigDecimalTypeDeclaration                  
+      else if(classOf[scala.Array[Int]].isAssignableFrom(c))
+        intArrayTypeDeclaration
+      else if(classOf[scala.Array[Long]].isAssignableFrom(c))
+        longArrayTypeDeclaration
+      else if(classOf[scala.Array[Double]].isAssignableFrom(c))
+        doubleArrayTypeDeclaration
+      else
+        Utils.throwError("unsupported type " + ar.getClass.getCanonicalName)
+     
+      decl    
+  }
 
-  def writeCastInvocation(e: TypedExpressionNode[_], sw: StatementWriter) = {
+/*
+  def writeCastInvocation(e: TypedExpression[_,_], sw: StatementWriter) = {
     sw.write("cast(")
     e.write(sw)
 
@@ -775,7 +838,7 @@ trait DatabaseAdapter {
     sw.write(")")
   }
 
-  def writeCaseStatement(toMatch: Option[ExpressionNode], cases: Iterable[(ExpressionNode, TypedExpressionNode[_])], otherwise: TypedExpressionNode[_], sw: StatementWriter) = {
+  def writeCaseStatement(toMatch: Option[ExpressionNode], cases: Iterable[(ExpressionNode, TypedExpression[_,_])], otherwise: TypedExpression[_,_], sw: StatementWriter) = {
 
     sw.write("(case ")
     toMatch.foreach(_.write(sw))
@@ -796,4 +859,5 @@ trait DatabaseAdapter {
     sw.unindent
     sw.write("end)")
   }
+*/  
 }
