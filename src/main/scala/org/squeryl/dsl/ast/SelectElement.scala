@@ -19,6 +19,8 @@ import collection.mutable.ArrayBuffer
 import org.squeryl.internals._
 import java.sql.ResultSet
 import org.squeryl.Session
+import org.squeryl.dsl.TypedExpression
+import scala.annotation.tailrec
 
 /**
  * SelectElement are elements of a select list, for example they are a,b, and c in :
@@ -73,16 +75,25 @@ trait SelectElement extends ExpressionNode {
    *
    */
   def inhibitAliasOnSelectElementReference: Boolean = {
-    var e:ExpressionNode = origin
 
-    while(e.parent != None) {
-      e = e.parent.get
-    }
+    def shouldInhibit(e: ExpressionNode): Boolean =
+      e.parent map ({ p =>
+        if(p.isInstanceOf[QueryExpressionElements])
+          p.asInstanceOf[QueryExpressionElements].inhibitAliasOnSelectElementReference
+        else
+          shouldInhibit(p)
+      }) getOrElse true
 
-    if(!e.isInstanceOf[QueryExpressionElements])
-      true
-    else
-      e.asInstanceOf[QueryExpressionElements].inhibitAliasOnSelectElementReference
+    shouldInhibit(origin)
+  }
+
+  def realTableNamePrefix: Boolean = {
+
+    def parent(e: ExpressionNode): ExpressionNode =
+      (e.parent map (p => parent(p))) getOrElse e
+
+    val p = parent(origin)
+    p.isInstanceOf[UpdateStatement] || p.isInstanceOf[QueryExpressionElements]
   }
 
   def prepareColumnMapper(index: Int): Unit
@@ -110,42 +121,13 @@ trait SelectElement extends ExpressionNode {
     sw.write(" as ")
     sw.databaseAdapter.writeSelectElementAlias(this, sw)
   }
-
-  /**
-   * Will throw a ClassCastException if this type is not a Enumeration#Value
-   */
-  def createEnumerationMapper(s: Enumeration#Value): OutMapper[Enumeration#Value] = new OutMapper[Enumeration#Value]() {
-
-    def doMap(rs: ResultSet) = {
-      val fmd = outer.asInstanceOf[FieldSelectElement].fieldMetaData
-      fmd.canonicalEnumerationValueFor(rs.getInt(this.index)).get
-    }
-
-    def sample = s
-  }
-
-  /**
-   * Will throw a ClassCastException if this type is not a Enumeration#Value
-   */
-  def createEnumerationOptionMapper(s: Option[Enumeration#Value]): OutMapper[Option[Enumeration#Value]] = new OutMapper[Option[Enumeration#Value]]() {
-
-    def doMap(rs: ResultSet) = {
-      val fmd = outer.asInstanceOf[FieldSelectElement].fieldMetaData
-      fmd.canonicalEnumerationValueFor(rs.getInt(this.index))
-    }
-
-    def sample = 
-      if(s == None) 
-        org.squeryl.internals.Utils.throwError("can't find a sample value for enum " + outer)
-      else s
-  }
 }
 
 class TupleSelectElement
  (val origin: QueryExpressionNode[_], val expression: ExpressionNode, indexInTuple: Int, isGroupTuple: Boolean)
     extends SelectElement {
 
-  def resultSetMapper: ResultSetMapper = org.squeryl.internals.Utils.throwError("refactor me")
+  def resultSetMapper: ResultSetMapper = throw new UnsupportedOperationException("refactor me")
 
   //TODO: normalize ?
   def alias =
@@ -179,7 +161,10 @@ class FieldSelectElement
 
   def alias =
     if(inhibitAliasOnSelectElementReference)
-      fieldMetaData.columnName
+      if(realTableNamePrefix)
+        origin.view.name + "." + fieldMetaData.columnName
+      else
+        fieldMetaData.columnName
     else
       origin.alias + "." + fieldMetaData.columnName
 
@@ -246,10 +231,10 @@ class ValueSelectElement
  * with the exception of SelectElement that refer to an inner or outer query's SelectElement,
  * these are ExportedSelectElement
  */
-class SelectElementReference[A]
-  (val selectElement: SelectElement)(implicit val mapper: OutMapper[A])
-    extends TypedExpressionNode[A] {
-
+class SelectElementReference[A,T]
+  (val selectElement: SelectElement, val mapper: OutMapper[A])
+    extends TypedExpression[A,T] {
+    
   override def toString =
     'SelectElementReference + ":" + Utils.failSafeString(delegateAtUseSite.alias) + ":" + selectElement.typeOfExpressionToString + inhibitedFlagForAstDump
 
@@ -257,15 +242,18 @@ class SelectElementReference[A]
     selectElement.inhibited
 
   private def _useSite: QueryExpressionNode[_] = {
-    var e: ExpressionNode = this
-
-    do {
-      e = e.parent.get
-      if(e.isInstanceOf[QueryExpressionNode[_]])
-        return e.asInstanceOf[QueryExpressionNode[_]]
-    } while (e != None)
-
-    org.squeryl.internals.Utils.throwError("could not determine use site of "+ this)
+    
+    def findQueryExpressionNode(e: ExpressionNode): QueryExpressionNode[_] = e match {
+      case qe: QueryExpressionNode[_] => qe
+      case _ =>
+        e.parent match {
+          case Some(e_) => findQueryExpressionNode(e_)
+          case _ => 
+            org.squeryl.internals.Utils.throwError("could not determine use site of "+ this)
+        }
+    }
+    
+    findQueryExpressionNode(this)
   }
 
   lazy val delegateAtUseSite =
@@ -292,8 +280,6 @@ class SelectElementReference[A]
 class ExportedSelectElement
   (val selectElement: SelectElement)
     extends SelectElement {
-
-  var outerScopes:List[QueryExpressionNode[_]] = Nil
 
   def resultSetMapper = selectElement.resultSetMapper
 
@@ -353,7 +339,16 @@ class ExportedSelectElement
     outerTarget.getOrElse(org.squeryl.internals.Utils.throwError("could not find the target of : " + selectElement))
   )
 
-  def needsOuterScope:Boolean = innerTarget.isEmpty && outerTarget.isEmpty && ! isDirectOuterReference
+  private def outerScopes: List[QueryExpressionNode[_]] = outerScopes0(this, Nil)
+
+  @tailrec
+  private def outerScopes0(current: ExpressionNode, scopes: List[QueryExpressionNode[_]]): List[QueryExpressionNode[_]] = {
+    current.parent match {
+      case Some(s: QueryExpressionNode[_]) => outerScopes0(s, scopes :+ s)
+      case Some(n) => outerScopes0(n, scopes)
+      case None => scopes
+    }
+  }
 
   private def isDirectOuterReference: Boolean = outerScopes.exists((outer) => outer == selectElement.parentQueryable)
 

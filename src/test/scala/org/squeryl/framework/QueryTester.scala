@@ -1,6 +1,7 @@
 package org.squeryl.framework
 
 import org.squeryl.{Session, Query}
+import org.squeryl.test.PrimitiveTypeModeForTests._
 import org.scalatest.matchers.ShouldMatchers
 
 trait QueryTester { self : ShouldMatchers =>
@@ -27,7 +28,7 @@ trait QueryTester { self : ShouldMatchers =>
     println(queryName + " :")
     println(query)
 
-    for(r <- query)
+    for(r <- query.asInstanceOf[Query[Any]])
       println("-->" + r)
   }
 

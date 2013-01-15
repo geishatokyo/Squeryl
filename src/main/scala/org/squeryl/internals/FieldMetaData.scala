@@ -21,18 +21,17 @@ import java.sql.ResultSet
 import java.math.BigDecimal
 import scala.annotation.tailrec
 import org.squeryl.annotations.{ColumnBase, Column}
-import org.squeryl.dsl.ast.{ConstantExpressionNode, TypedExpressionNode}
 import collection.mutable.{HashMap, HashSet, ArrayBuffer}
-import org.squeryl.{IndirectKeyedEntity, Session, KeyedEntity}
+import org.squeryl.Session
 import org.squeryl.dsl.CompositeKey
 import org.squeryl.customtypes.CustomType
-import scala.reflect.generic.ByteCodecs
 import scala.tools.scalap.scalax.rules.scalasig.{ScalaSigAttributeParsers, ByteCode, ScalaSigPrinter}
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.lang.reflect.Member
 import scala.tools.scalap.scalax.rules.scalasig.ScalaSigParser
-import java.util.Date
+import org.squeryl.dsl.ast.ConstantTypedExpression
+import org.squeryl.customtypes.CustomType
 
 class FieldMetaData(
         val parentMetaData: PosoMetaData[_],
@@ -40,37 +39,36 @@ class FieldMetaData(
         val fieldType: Class[_], // if isOption, this fieldType is the type param of Option, i.e. the T in Option[T]
         val wrappedFieldType: Class[_], //in primitive type mode fieldType == wrappedFieldType, in custom type mode wrappedFieldType is the 'real'
         // type, i.e. the (primitive) type that jdbc understands
-        val customTypeFactory: Option[AnyRef=>Product1[Any]],
+        val customTypeFactory: Option[AnyRef => Product1[Any] with AnyRef],
         val isOption: Boolean,
         getter: Option[Method],
         setter: Option[Method],
         field:  Option[Field],
         columnAnnotation: Option[Column],
         val isOptimisticCounter: Boolean,
-        val sampleValue: AnyRef) {
+        val sampleValue: Any) {
 
-  def isEnumeration = {
-    classOf[Enumeration#Value].isAssignableFrom(wrappedFieldType)
-  }
+  def nativeJdbcType =
+    this.schema.fieldMapper.nativeJdbcTypeFor(wrappedFieldType)
+
+  /**
+   * None if this FieldMetaData is not an enumeration, Some(theParentEnumeration) otherwise
+   */
+  val enumeration: Option[Enumeration] =
+    sampleValue match {
+      case Some(e: Enumeration#Value) => Some(Utils.enumerationForValue(e))
+      case e: Enumeration#Value => Some(Utils.enumerationForValue(e))
+      case _ => None
+    }
+
 
   def canonicalEnumerationValueFor(id: Int) =
-    if(sampleValue == null) {
+    if(sampleValue == null)
       org.squeryl.internals.Utils.throwError("classes with Enumerations must have a zero param constructor that assigns a sample to the enumeration field")
-    }
-    else {
-
-      val svE =
-        if(isOption)
-          sampleValue.asInstanceOf[Option[Enumeration#Value]].get
-        else
-          sampleValue.asInstanceOf[Enumeration#Value]
-
-      val enu = Utils.enumerationForValue(svE)
-
-      val r = enu.values.find(_.id == id)
-
-      r
-    }
+    else
+      enumeration flatMap { e: Enumeration =>
+        e.values find { _.id == id }
+      } get
 
   /**
    * This field is mutable only by the Schema trait, and only during the Schema instantiation,
@@ -119,8 +117,7 @@ class FieldMetaData(
   }
 
   def isIdFieldOfKeyedEntity =
-    (classOf[KeyedEntity[Any]].isAssignableFrom(parentMetaData.clasz) && nameOfProperty == "id") ||
-    (classOf[IndirectKeyedEntity[_,_]].isAssignableFrom(parentMetaData.clasz)  && nameOfProperty == "idField")
+    parentMetaData.viewOrTable.ked.map(_.idPropertyName == nameOfProperty).getOrElse(false)
 
   if(isIdFieldOfKeyedEntity && ! classOf[CompositeKey].isAssignableFrom(wrappedFieldType)) {
     schema.defaultColumnAttributesForKeyedEntityId(wrappedFieldType).foreach(ca => {
@@ -135,11 +132,11 @@ class FieldMetaData(
     })
   }
 
-  private [squeryl] var _defaultValue: Option[ConstantExpressionNode[_]] = None
+  private [squeryl] var _defaultValue: Option[ConstantTypedExpression[_,_]] = None
 
   def columnAttributes: Iterable[ColumnAttribute] = _columnAttributes
 
-  def defaultValue: Option[ConstantExpressionNode[_]] = _defaultValue
+  def defaultValue: Option[ConstantTypedExpression[_,_]] = _defaultValue
 
   /**
    * The db column type declaration overriden in the schema, if None, it means that it is the default value for
@@ -152,6 +149,9 @@ class FieldMetaData(
     else
       Some(dbt.get.asInstanceOf[DBType].declaration)
   }
+  
+  def isTransient =
+    _columnAttributes.exists(_.isInstanceOf[IsTransient])
 
   def isCustomType = customTypeFactory != None
 
@@ -168,8 +168,9 @@ class FieldMetaData(
    * the most appropriate column type  
    */
   def length: Int =
-    if(columnAnnotation == None || columnAnnotation.get.length == -1)
+    if(columnAnnotation == None || columnAnnotation.get.length == -1) {
       FieldMetaData.defaultFieldLength(wrappedFieldType, this)
+    }
     else
       columnAnnotation.get.length
 
@@ -202,9 +203,11 @@ class FieldMetaData(
         res
     }
   
-  val resultSetHandler =
-    FieldMetaData.resultSetHandlerFor(wrappedFieldType)
+  protected def createResultSetHandler =
+    this.schema.fieldMapper.resultSetHandlerFor(wrappedFieldType)
 
+  val resultSetHandler = createResultSetHandler
+    
   if(!isCustomType)
     assert(fieldType == wrappedFieldType,
       "expected fieldType == wrappedFieldType in primitive type mode, got "+
@@ -284,6 +287,11 @@ class FieldMetaData(
     catch {
       case e: IllegalArgumentException => org.squeryl.internals.Utils.throwError(wrappedFieldType.getName + " used on " + o.getClass.getName)
     }
+    
+  def getNativeJdbcValue(o:AnyRef): AnyRef = {
+    val r = get(o)
+    schema.fieldMapper.nativeJdbcValueFor(wrappedFieldType, r)
+  }
 
   def setFromResultSet(target: AnyRef, rs: ResultSet, index: Int) = {
     val v = resultSetHandler(rs, index)
@@ -296,11 +304,11 @@ class FieldMetaData(
    */
   def set(target: AnyRef, v: AnyRef) = {
     try {
-      val v0:AnyRef =
+      val v0: AnyRef =
         if(v == null)
           null
-        else if(isEnumeration)
-          canonicalEnumerationValueFor(v.asInstanceOf[java.lang.Integer].intValue).get
+        else if(enumeration != None)
+          canonicalEnumerationValueFor(v.asInstanceOf[java.lang.Integer].intValue)
         else if(customTypeFactory == None)
           v
         else {
@@ -309,7 +317,7 @@ class FieldMetaData(
           if(v.isInstanceOf[CustomType[_]]) {
             val r = v.asInstanceOf[CustomType[_]]._1
             f(if(r == null) null else r.asInstanceOf[AnyRef])
-          }
+          }          
           else {
            f(v)
           }
@@ -330,8 +338,8 @@ class FieldMetaData(
           _setWithField(target, actualValue)
     }
     catch {
-      case e: IllegalArgumentException => {
-        val typeOfV = if(v == null) "null" else v.getClass.getName
+      case e: Exception => {
+        val typeOfV = if(v == null) "null" else v.getClass.getCanonicalName
         org.squeryl.internals.Utils.throwError(
           this + " was invoked with value '" + v + "' of type " + typeOfV + " on object of type " + target.getClass.getName + " \n" + e)
       }
@@ -358,37 +366,12 @@ trait FieldMetaDataFactory {
 
   def build(parentMetaData: PosoMetaData[_], name: String, property: (Option[Field], Option[Method], Option[Method], Set[Annotation]), sampleInstance4OptionTypeDeduction: AnyRef, isOptimisticCounter: Boolean): FieldMetaData
 
-  def isSupportedFieldType(c: Class[_]): Boolean =
-    FieldMetaData._isSupportedFieldType.handleType(c, None)
-
   def createPosoFactory(posoMetaData: PosoMetaData[_]): ()=>AnyRef
 }
 
 object FieldMetaData {
 
   private val _EMPTY_ARRAY = new Array[Object](0)
-
-  private [squeryl] val _isSupportedFieldType = new FieldTypeHandler[Boolean] {
-
-    def handleIntType = true
-    def handleStringType  = true
-    def handleStringType(fmd: Option[FieldMetaData]) = true
-    def handleBooleanType = true
-    def handleDoubleType = true
-    def handleDateType = true
-    def handleJavaDateType = true
-    def handleLongType = true
-    def handleFloatType = true
-    def handleBigDecimalType(fmd: Option[FieldMetaData]) = true
-    def handleTimestampType = true
-    def handleBinaryType = true
-    def handleEnumerationValueType = true
-    def handleUuidType = true
-    def handleUnknownType(c: Class[_]) =
-      c.isAssignableFrom(classOf[Some[_]]) ||
-      classOf[Product1[Any]].isAssignableFrom(c)
-        //classOf[Some[_]].isAssignableFrom(c)
-  }
   
   var factory = new FieldMetaDataFactory {   
 
@@ -400,6 +383,8 @@ object FieldMetaData {
 
     def build(parentMetaData: PosoMetaData[_], name: String, property: (Option[Field], Option[Method], Option[Method], Set[Annotation]), sampleInstance4OptionTypeDeduction: AnyRef, isOptimisticCounter: Boolean) = {
 
+      val fieldMapper = parentMetaData.schema.fieldMapper 
+      
       val field  = property._1
       val getter = property._2
       val setter = property._3
@@ -420,14 +405,21 @@ object FieldMetaData {
        * Look for a value in the sample type.  If one exists and
        * it is not None, we can use it to deduce the Option type.   
        */
-      var v =
+      var v: AnyRef =
          if(sampleInstance4OptionTypeDeduction != null) {
-           if(field != None)
-             field.get.get(sampleInstance4OptionTypeDeduction)
-           else if(getter != None)
-             getter.get.invoke(sampleInstance4OptionTypeDeduction, _EMPTY_ARRAY :_*)
-           else
-            createDefaultValue(member, clsOfField, Some(typeOfField), colAnnotation)
+           field flatMap { f =>
+             f.get(sampleInstance4OptionTypeDeduction) match {
+               case a: AnyRef => Some(a)
+               case _ => None
+             }
+           } orElse {
+	             getter flatMap { _.invoke(sampleInstance4OptionTypeDeduction, _EMPTY_ARRAY : _*) match {
+	               case a: AnyRef => Some(a)
+	               case _ => None
+	             }
+             }
+           } getOrElse
+            createDefaultValue(fieldMapper, member, clsOfField, Some(typeOfField), colAnnotation)
          }
          else null
 
@@ -436,10 +428,10 @@ object FieldMetaData {
 
       val constructorSuppliedDefaultValue = v
 
-      var customTypeFactory: Option[AnyRef=>Product1[Any]] = None
+      var customTypeFactory: Option[AnyRef=>Product1[Any] with AnyRef] = None
 
       if(classOf[Product1[Any]].isAssignableFrom(clsOfField))
-        customTypeFactory = _createCustomTypeFactory(parentMetaData.clasz, clsOfField)
+        customTypeFactory = _createCustomTypeFactory(fieldMapper, parentMetaData.clasz, clsOfField)
 
       if(customTypeFactory != None) {
         val f = customTypeFactory.get
@@ -452,7 +444,7 @@ object FieldMetaData {
          * in order to do so.
          */
         v = try {
-          createDefaultValue(member, clsOfField, Some(typeOfField), colAnnotation)
+          createDefaultValue(fieldMapper, member, clsOfField, Some(typeOfField), colAnnotation)
         }
         catch {
           case e:Exception => null
@@ -483,7 +475,7 @@ object FieldMetaData {
           v.asInstanceOf[Product1[Any]]._1.asInstanceOf[AnyRef].getClass
         else if(isOption && v.asInstanceOf[Option[AnyRef]].get.isInstanceOf[Product1[_]]) {
           //if we get here, customTypeFactory has not had a chance to get created
-          customTypeFactory = _createCustomTypeFactory(parentMetaData.clasz, typeOfFieldOrTypeOfOption)
+          customTypeFactory = _createCustomTypeFactory(fieldMapper, parentMetaData.clasz, typeOfFieldOrTypeOfOption)
           v.asInstanceOf[Option[AnyRef]].get.asInstanceOf[Product1[Any]]._1.asInstanceOf[AnyRef].getClass
         }
         else
@@ -511,7 +503,7 @@ object FieldMetaData {
    * that creates an instance of a custom type with it, the factory accepts null to create
    * default values for non nullable primitive types (int, long, etc...)
    */
-  private def _createCustomTypeFactory(ownerClass: Class[_], typeOfField: Class[_]): Option[AnyRef=>Product1[Any]] = {
+  private def _createCustomTypeFactory(fieldMapper: FieldMapper, ownerClass: Class[_], typeOfField: Class[_]): Option[AnyRef=>Product1[Any] with AnyRef] = {
     // run through the given class hierarchy and return the first method
     // which is called "value" and doesn't return java.lang.Object
     @tailrec
@@ -526,7 +518,7 @@ object FieldMetaData {
      // invoke the given constructor and expose possible exceptions to the caller.
     def invoke(c: Constructor[_], value: AnyRef) =
       try {
-        c.newInstance(value).asInstanceOf[Product1[Any]]
+        c.newInstance(value).asInstanceOf[Product1[Any] with AnyRef]
       } catch {
         case ex: InvocationTargetException =>
           throw ex.getTargetException
@@ -535,12 +527,12 @@ object FieldMetaData {
     find(typeOfField) flatMap(m => {
       val pType = m.getReturnType
 
-      assert(factory.isSupportedFieldType(pType),
+      assert(fieldMapper.isSupported(pType),
         "enclosed type %s of CustomType %s is not a supported field type!"
         .format(pType.getName, typeOfField.getName))
 
       val c = typeOfField.getConstructor(pType)
-      val defaultValue = createDefaultValue(c, pType, None, None)
+      val defaultValue = createDefaultValue(fieldMapper, c, pType, None, None)
 
       if(defaultValue == null) None
       else
@@ -551,105 +543,17 @@ object FieldMetaData {
     })
   }
 
-  def defaultFieldLength(fieldType: Class[_], fmd: FieldMetaData) =
-    _defaultFieldLengthAssigner.handleType(fieldType, Some(fmd))
-
-  private val _defaultFieldLengthAssigner = new FieldTypeHandler[Int] {
-
-    def handleIntType = 4
-    def handleStringType  = 255
-    def handleStringType(fmd: Option[FieldMetaData]) = fmd.get.schema.defaultLengthOfString
-    def handleBooleanType = 1
-    def handleDoubleType = 8
-    def handleDateType = -1
-    def handleJavaDateType = -1
-    def handleLongType = 8
-    def handleFloatType = 4
-    def handleBigDecimalType(fmd: Option[FieldMetaData]) = fmd.get.schema.defaultSizeOfBigDecimal._1
-    def handleTimestampType = -1
-    def handleBinaryType = 255
-    def handleEnumerationValueType = 4
-    def handleUuidType = 36
-    def handleUnknownType(c: Class[_]) = org.squeryl.internals.Utils.throwError("Cannot assign field length for " + c.getName)
-  }
-
-  private val _defaultValueFactory = new FieldTypeHandler[AnyRef] {
-
-    def handleIntType = new java.lang.Integer(0)
-    def handleStringType  = ""
-    def handleStringType(fmd: Option[FieldMetaData])  = ""
-    def handleBooleanType = new java.lang.Boolean(false)
-    def handleDoubleType = new java.lang.Double(0.0)
-    def handleDateType = new java.sql.Date(0)
-    def handleJavaDateType = new java.util.Date()
-    def handleLongType = new java.lang.Long(0)
-    def handleFloatType = new java.lang.Float(0)
-    def handleBigDecimalType(fmd: Option[FieldMetaData]) = new scala.math.BigDecimal(java.math.BigDecimal.ZERO)
-    def handleTimestampType = new java.sql.Timestamp(0)
-    def handleBinaryType = new Array[Byte](0)
-    def handleEnumerationValueType = DummyE.Z
-    def handleUuidType = java.util.UUID.fromString("00000000-0000-0000-0000-000000000000")
-    def handleUnknownType(c: Class[_]) = null
-  }
-
-  object DummyE extends Enumeration {
-    type DummyE = Value
-    val Z = Value
-  }
-
-  private val _mapper = new FieldTypeHandler[(ResultSet,Int)=>AnyRef] {
-
-    private def _handleNull(rs: ResultSet, v: Any) =
-      if(rs.wasNull)
-        null
-      else
-        v.asInstanceOf[AnyRef]
-
-    val _intM =     (rs:ResultSet,i:Int) => _handleNull(rs, rs.getInt(i))
-    val _stringM =  (rs:ResultSet,i:Int) => _handleNull(rs, rs.getString(i))
-    val _doubleM =  (rs:ResultSet,i:Int) => _handleNull(rs, rs.getDouble(i))
-    val _booleanM = (rs:ResultSet,i:Int) => _handleNull(rs, rs.getBoolean(i))
-    //(rs:ResultSet,i:Int) => Session.currentSession.databaseAdapter.convertToBooleanForJdbc(rs, i)
-    val _dateM =    (rs:ResultSet,i:Int) => _handleNull(rs, rs.getDate(i))
-    val _javaDateM =    (rs:ResultSet,i:Int) => _handleNull(rs, {
-      val s = rs.getTimestamp(i)
-      if(s == null) null
-      else new java.util.Date(s.getTime)
-    })
-    val _longM =    (rs:ResultSet,i:Int) => _handleNull(rs, rs.getLong(i))
-    val _floatM =   (rs:ResultSet,i:Int) => _handleNull(rs, rs.getFloat(i))
-    val _bigDecM =  (rs:ResultSet,i:Int) => _handleNull(rs, new scala.math.BigDecimal(rs.getBigDecimal(i)))
-    val _timestampM =    (rs:ResultSet,i:Int) => _handleNull(rs, rs.getTimestamp(i))
-    val _binaryM =  (rs:ResultSet,i:Int) => _handleNull(rs, rs.getBytes(i))
-    val _uuidM = (rs:ResultSet, i:Int) => {
-      rs.getObject(i) // Some DBs require a call to getXXX before calling wasNull
-      if (rs.wasNull) null
-      else Session.currentSession.databaseAdapter.convertToUuidForJdbc(rs, i)
+  def defaultFieldLength(fieldType: Class[_], fmd: FieldMetaData) = {
+    if(classOf[String].isAssignableFrom(fieldType))
+      fmd.schema.defaultLengthOfString      
+    else if(classOf[java.math.BigDecimal].isAssignableFrom(fieldType) || classOf[scala.math.BigDecimal].isAssignableFrom(fieldType)) {
+      fmd.schema.defaultSizeOfBigDecimal._1
     }
-
-    def handleIntType = _intM
-    def handleStringType  = _stringM
-    def handleStringType(fmd: Option[FieldMetaData])  = _stringM
-    def handleBooleanType = _booleanM
-    def handleDoubleType = _doubleM
-    def handleDateType = _dateM
-    def handleJavaDateType = _javaDateM
-    def handleFloatType = _floatM
-    def handleLongType = _longM
-    def handleBigDecimalType = _bigDecM
-    def handleBigDecimalType(fmd: Option[FieldMetaData]) = _bigDecM
-    def handleTimestampType = _timestampM
-    def handleBinaryType = _binaryM
-    def handleUuidType = _uuidM
-    def handleEnumerationValueType = _intM
-
-    def handleUnknownType(c: Class[_]) =
-      org.squeryl.internals.Utils.throwError("field type " + c.getName + " is not supported")
+    else {
+      fmd.schema.fieldMapper.defaultColumnLength(fieldType)
+    }
   }
-
-  def resultSetHandlerFor(c: Class[_]) =
-    _mapper.handleType(c, None)
-
+  
   def detectScalapOnClasspath(): Boolean = {
     try {
       Class.forName("scala.tools.scalap.scalax.rules.scalasig.ByteCode")
@@ -692,14 +596,14 @@ object FieldMetaData {
     }
   }
 
-  def createDefaultValue(member: Member, p: Class[_], t: Option[Type], optionFieldsInfo: Option[Column]): Object = {
+  def createDefaultValue(fieldMapper: FieldMapper, member: Member, p: Class[_], t: Option[Type], optionFieldsInfo: Option[Column]): Object = {
     if (p.isAssignableFrom(classOf[Option[Any]])) {
       /*
        * First we'll look at the annotation if it exists as it's the lowest cost.
        */
        optionFieldsInfo.flatMap(ann => 
          if(ann.optionType != classOf[Object])
-           Some(createDefaultValue(member, ann.optionType, None, None))
+           Some(createDefaultValue(fieldMapper, member, ann.optionType, None, None))
           else None).orElse{
 	      /*
 	       * Next we'll try the Java generic type.  This will fail if the generic parameter is a primitive as
@@ -718,7 +622,7 @@ object FieldMetaData {
 	                  if (classOf[Object] == oType && detectScalapOnClasspath()) optionTypeFromScalaSig(member) 
 	                  else Some(oType.asInstanceOf[Class[_]])
 	                trueTypeOption flatMap { trueType =>
-	                  val deduced = createDefaultValue(member, trueType, None, optionFieldsInfo)
+	                  val deduced = createDefaultValue(fieldMapper, member, trueType, None, optionFieldsInfo)
 	                  if (deduced != null)
 	                    Some(deduced)
 	                  else
@@ -734,7 +638,9 @@ object FieldMetaData {
 	        case _ => None //Not a parameterized type
 	      } 
       }
-    } else
-      _defaultValueFactory.handleType(p, None)
+    } 
+    else {      
+      fieldMapper.trySampleValueFor(p)
+    }
   }
 }

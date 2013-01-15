@@ -17,6 +17,7 @@ package org.squeryl.dsl.ast
 
 import org.squeryl.internals._
 import org.squeryl.dsl.{QueryYield, AbstractQuery}
+import scala.collection.mutable.ListBuffer
 
 class QueryExpressionNode[R](_query: AbstractQuery[R],
                              _queryYield:QueryYield[R],
@@ -39,11 +40,11 @@ class QueryExpressionNode[R](_query: AbstractQuery[R],
   private var _sample: Option[AnyRef] = None
 
   private def _isPrimitiveType(o: AnyRef) =
-    FieldMetaData._isSupportedFieldType.handleType(o.getClass, None)
+    o.getClass.isPrimitive
 
   def isUseableAsSubquery: Boolean =
     _sample match {
-      case None => org.squeryl.internals.Utils.throwError("method cannot be called before initialization")
+      case None => throw new IllegalStateException("method cannot be called before initialization")
       case Some(p:Product) =>
         if(p.getClass.getName.startsWith("scala.Tuple")) {
           val z = (for(i <- 0 to (p.productArity - 1)) yield p.productElement(i))
@@ -60,7 +61,7 @@ class QueryExpressionNode[R](_query: AbstractQuery[R],
   def owns(aSample: AnyRef) = 
     _sample != None && _sample.get.eq(aSample)
   
-  def getOrCreateSelectElement(fmd: FieldMetaData, forScope: QueryExpressionElements) = org.squeryl.internals.Utils.throwError("implement me")
+  def getOrCreateSelectElement(fmd: FieldMetaData, forScope: QueryExpressionElements) = throw new UnsupportedOperationException("implement me")
 
   override def toString = {
     val sb = new StringBuffer
@@ -73,17 +74,18 @@ class QueryExpressionNode[R](_query: AbstractQuery[R],
     sb.toString
   }
 
-  override def children =
-    List(
-      selectList.toList,
-      views.toList,
-      subQueries.toList,
-      tableExpressions.filter(e=> e.joinExpression != None).map(_.joinExpression.get).toList,  
-      whereClause.toList,
-      groupByClause.toList,
-      havingClause.toList,
-      orderByClause.toList      
-    ).flatten
+  override def children = {
+    val lb = ListBuffer[ExpressionNode]();
+    lb ++= selectList
+    lb ++= views
+    lb ++= subQueries
+    lb ++= tableExpressions.filter(e=> e.joinExpression != None).map(_.joinExpression.get)  
+    lb ++= whereClause
+    lb ++= groupByClause
+    lb ++= havingClause
+    lb ++= orderByClause      
+    lb.toList
+  }
 
   def isChild(q: QueryableExpressionNode):Boolean =
     views.find(n => n == q) != None
@@ -123,10 +125,6 @@ class QueryExpressionNode[R](_query: AbstractQuery[R],
         }
       })
     }
-  }
-
-  def propagateOuterScope() {
-    filterDescendantsOfType[NestedExpression].foreach((n) => n.propagateOuterScope(this))
   }
 
   def selectList: Iterable[SelectElement] = _selectList
