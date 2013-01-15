@@ -12,11 +12,11 @@ import org.squeryl.PrimitiveTypeMode._
  * Create: 12/01/22 23:07
  */
 
-class User(var id : Long,  var name : String) extends KeyedEntity[Long]{
+case class User(var id : Long,  var name : String) extends KeyedEntity[Long]{
   def this() = this(0,"")
 }
 
-class Blog(var id : Long , var writerId : Long,text : String,  date : Date) extends KeyedEntity[Long]{
+case class Blog(var id : Long , var writerId : Long,var text : String, var date : Date) extends KeyedEntity[Long]{
   def this() = this(0,0,"",new Date)
 }
 
@@ -57,8 +57,18 @@ abstract class BlogDbTestRun extends ShardedSchemaTester {
         users.insert(new User(userId,"user" + userId))
       }
     }
+    def createBlog(userId : Long) = {
+      val blog = new Blog(userId,userId,"User" + userId + "'s blog",new Date)
+      write(selectShard(userId)){
+        blogs.insert(blog)
+      }
+    }
+    
     val userIds = List(1L,2L,5L,6L,8L,2325L,132L)
-    userIds.foreach(createUser(_))
+    userIds.foreach(userId => {
+      createUser(userId)
+      createBlog(userId)
+    })
 
     for(userId <- userIds){
       val myShard = selectShard(userId)
@@ -66,8 +76,10 @@ abstract class BlogDbTestRun extends ShardedSchemaTester {
         read(shard){
           if(shard == myShard){
             users.lookup(userId) must not be(None)
+            blogs.lookup(userId) must not be(None)
           }else{
             users.lookup(userId) must be(None)
+            blogs.lookup(userId) must be(None)
           }
         }
       }

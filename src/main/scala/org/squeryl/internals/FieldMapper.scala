@@ -54,7 +54,7 @@ trait FieldMapper {
     val dateTEF = new TypedExpressionFactory[Date,TDate] with PrimitiveJdbcMapper[Date] {
       val sample = new Date
       val defaultColumnLength = -1
-      def extractNativeJdbcValue(rs: ResultSet, i: Int) = rs.getDate(i)
+      def extractNativeJdbcValue(rs: ResultSet, i: Int) = rs.getTimestamp(i)
     }
     
     val optionDateTEF = new TypedExpressionFactory[Option[Date],TOptionDate] with DeOptionizer[Date, Date, TDate, Option[Date], TOptionDate] {
