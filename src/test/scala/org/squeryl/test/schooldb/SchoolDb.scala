@@ -824,7 +824,7 @@ abstract class SchoolDbTestRun extends SchoolDbTestBase {
     val mandarinCourse =
       courses.where(c => c.id === mandarin.id).single
 
-    assert(mandarinCourse.startDate == feb2010,
+    assert(mandarinCourse.startDate.getTime == feb2010.getTime,
       'testDateTypeMapping + " failed, expected " + feb2010 + " got " + mandarinCourse.startDate)
 
     mandarinCourse.startDate = feb2011
@@ -846,7 +846,7 @@ abstract class SchoolDbTestRun extends SchoolDbTestBase {
     var groupTh =
       courses.where(c => c.id === groupTheory.id).single
 
-    assert(groupTh.finalExamDate == Some(may2009),
+    assert(groupTh.finalExamDate.map(_.getTime) == Some(may2009.getTime),
       'testDateOptionMapping + " failed, expected " + Some(may2009) + " got " + groupTh.finalExamDate)
 
 
@@ -858,7 +858,7 @@ abstract class SchoolDbTestRun extends SchoolDbTestBase {
     groupTh =
       courses.where(c => c.id === groupTheory.id).single
 
-    assert(groupTh.finalExamDate == Some(feb2011),
+    assert(groupTh.finalExamDate.map(_.getTime) == Some(feb2011.getTime),
       'testDateOptionMapping + " failed, expected " + Some(feb2011) + " got " + groupTh.finalExamDate)
 
 
@@ -884,7 +884,7 @@ abstract class SchoolDbTestRun extends SchoolDbTestBase {
     groupTh =
       courses.where(c => c.id === groupTheory.id).single
 
-    assert(groupTh.finalExamDate == Some(may2009),
+    assert(groupTh.finalExamDate.map(_.getTime) == Some(may2009.getTime),
       'testDateOptionMapping + " failed, expected " + Some(may2009) + " got " + groupTh.finalExamDate)
 
     passed('testDateOptionMapping )
