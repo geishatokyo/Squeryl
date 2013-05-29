@@ -51,13 +51,13 @@ parallelExecution := false
 
 publishMavenStyle := true
 
-publishTo <<= (version) { version: String =>
-  val nexus = "http://nexus.scala-tools.org/content/repositories/"
-  if (version.trim.endsWith("SNAPSHOT")) 
-    Some("Scala Tools Snapshots" at nexus + "snapshots/") 
-  else
-    Some("Scala Tools Releases" at nexus + "releases/")
-}
+//publishTo <<= (version) { version: String =>
+//  val nexus = "http://nexus.scala-tools.org/content/repositories/"
+//  if (version.trim.endsWith("SNAPSHOT")) 
+//    Some("Scala Tools Snapshots" at nexus + "snapshots/") 
+//  else
+//    Some("Scala Tools Releases" at nexus + "releases/")
+//}
 
 credentials += Credentials(Path.userHome / ".ivy2" / ".credentials")
 
