@@ -5,7 +5,7 @@ organization := "com.geishatokyo.squeryl"
 
 description := "A Scala ORM and DSL for talking with Databases using minimum verbosity and maximum type safety"
 
-version := "0.9.6-RC2"
+version := "0.9.6-RC3-SNAPSHOT"
 
 version <<= version { v => 
   val snapshot = Option(System.getProperty("snapshot")) == Some("true")
@@ -27,8 +27,9 @@ libraryDependencies ++= Seq(
   "net.sourceforge.jtds" % "jtds" % "1.2.4" % "provided",
   "org.apache.derby" % "derby" % "10.7.1.1" % "provided",
   "junit" % "junit" % "4.8.2" % "provided",
-  "org.jmock" % "jmock" % "2.6.0-RC2" % "provided",
-  "org.jmock" % "jmock-legacy" % "2.6.0-RC2" % "provided"
+  "org.jmock" % "jmock" % "2.6.0" % "provided",
+  "org.jmock" % "jmock-legacy" % "2.6.0" % "provided",
+  "org.hamcrest" % "hamcrest-core" % "1.2"
 )
 
 libraryDependencies <+= scalaVersion("org.scala-lang" % "scalap" % _ % "provided")

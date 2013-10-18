@@ -76,6 +76,7 @@ class ShardedSessionTest extends FlatSpec with MustMatchers {
     expecting{ e => import e._
       allowing(connection).getAutoCommit();will(returnValue(true))
       allowing(connection).setAutoCommit(false)
+      allowing(connection).setAutoCommit(true)
       exactly(2).of(connection).commit
     }
     val session = this.session()
@@ -97,7 +98,8 @@ class ShardedSessionTest extends FlatSpec with MustMatchers {
 
     expecting{ e => import e._
     allowing(connection).getAutoCommit();will(returnValue(true))
-    allowing(connection).setAutoCommit(false)
+      allowing(connection).setAutoCommit(false)
+      allowing(connection).setAutoCommit(true)
     exactly(2).of(connection).rollback
     }
     val session = this.session()

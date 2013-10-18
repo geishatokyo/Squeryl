@@ -90,11 +90,14 @@ case class ShardedSessionImpl(shardName : String ,shardMode : ShardMode.Value,se
   }
   
   private var transactionCounter = 0
-  
+
+  private var originalAutoCommit = false
+
   def beginTransaction() = {
     if(transactionCounter == 0){
       val c = session.connection
-      if(c.getAutoCommit()){
+      originalAutoCommit = c.getAutoCommit
+      if(originalAutoCommit){
         c.setAutoCommit(false)
       }
     }
@@ -108,6 +111,10 @@ case class ShardedSessionImpl(shardName : String ,shardMode : ShardMode.Value,se
         transactionCounter = 0
         val c = session.connection
         c.commit
+        if(originalAutoCommit){
+          c.setAutoCommit(originalAutoCommit)
+          originalAutoCommit = false
+        }
         true
       }else false
     }else{
