@@ -59,7 +59,7 @@ case class ShardedSessionImpl(shardName : String ,shardMode : ShardMode.Value,se
 
   def use() {
     if(closed){
-      throw new SquerylException("ShededSession for (%s,%s) is already closed!".format(shardName,shardMode))
+      throw new SquerylException("ShardedSession for (%s,%s) is already closed!".format(shardName,shardMode))
     }
     useCounter += 1
   }
@@ -71,6 +71,9 @@ case class ShardedSessionImpl(shardName : String ,shardMode : ShardMode.Value,se
     if(closed) return false
     useCounter -= 1
     if(useCounter <= 0){
+      if(originalAutoCommit){
+        session.connection.setAutoCommit(true)
+      }
       session.close
       closed = true
       useCounter = 0
@@ -83,6 +86,9 @@ case class ShardedSessionImpl(shardName : String ,shardMode : ShardMode.Value,se
 
   def forceClose()  : Boolean = {
     if(closed)return false
+    if(originalAutoCommit){
+      session.connection.setAutoCommit(true)
+    }
     session.close
     useCounter = 0
     closed = true
