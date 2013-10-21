@@ -71,9 +71,6 @@ case class ShardedSessionImpl(shardName : String ,shardMode : ShardMode.Value,se
     if(closed) return false
     useCounter -= 1
     if(useCounter <= 0){
-      if(originalAutoCommit){
-        session.connection.setAutoCommit(true)
-      }
       session.close
       closed = true
       useCounter = 0
@@ -86,9 +83,6 @@ case class ShardedSessionImpl(shardName : String ,shardMode : ShardMode.Value,se
 
   def forceClose()  : Boolean = {
     if(closed)return false
-    if(originalAutoCommit){
-      session.connection.setAutoCommit(true)
-    }
     session.close
     useCounter = 0
     closed = true
