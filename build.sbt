@@ -5,7 +5,7 @@ organization := "com.geishatokyo.squeryl"
 
 description := "A Scala ORM and DSL for talking with Databases using minimum verbosity and maximum type safety"
 
-version := "0.9.6-RC3-SNAPSHOT"
+version := "0.9.6-RC3"
 
 version <<= version { v => 
   val snapshot = Option(System.getProperty("snapshot")) == Some("true")
