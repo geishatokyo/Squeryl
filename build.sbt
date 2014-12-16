@@ -5,7 +5,7 @@ organization := "com.geishatokyo.squeryl"
 
 description := "A Scala ORM and DSL for talking with Databases using minimum verbosity and maximum type safety"
 
-version := "0.9.6-RC3"
+version := "0.9.6-RC4"
 
 version <<= version { v =>
   val snapshot = Option(System.getProperty("snapshot")) == Some("true")
@@ -17,7 +17,7 @@ version <<= version { v =>
 
 scalaVersion := "2.11.1"
 
-crossScalaVersions := Seq("2.11.1", "2.10.0", "2.9.2", "2.9.1", "2.9.0-1", "2.9.0")
+crossScalaVersions := Seq("2.11.1", "2.10.0")
 
 libraryDependencies ++= Seq(
   "cglib" % "cglib-nodep" % "2.2",
