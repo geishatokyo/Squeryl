@@ -1,9 +1,7 @@
 package org.squeryl.h2
 
 import org.squeryl.sharding.scenario.BlogDbTestRun
-import org.squeryl.sharding.builder.{SimpleShardedSessionBuilder, ShardedSessionBuilder}
-import org.squeryl.sharding.{ConnectionManager, ShardedSessionFactory, DatabaseConfig, SimpleShardingBuilderInitializer}
-import java.sql.{DriverManager, Connection}
+import org.squeryl.sharding.{DatabaseConfig, SimpleShardingBuilderInitializer}
 
 
 /**
@@ -13,7 +11,6 @@ import java.sql.{DriverManager, Connection}
  */
 
 trait H2_FileShards extends SimpleShardingBuilderInitializer{
-
 
   def skipTest_? = false
 
@@ -25,6 +22,5 @@ trait H2_FileShards extends SimpleShardingBuilderInitializer{
   }
 
 }
-
 
 class H2_FileShards_BlogDb extends BlogDbTestRun with H2_FileShards

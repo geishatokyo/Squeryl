@@ -150,6 +150,11 @@ class FieldMetaData(
       Some(dbt.get.asInstanceOf[DBType].declaration)
   }
   
+  /**
+   * If explicit db type case has been requested
+   */
+  def explicitDbTypeCast: Boolean = _columnAttributes.find(_.isInstanceOf[DBType]).map(a => a.asInstanceOf[DBType].explicit).getOrElse(false)
+  
   def isTransient =
     _columnAttributes.exists(_.isInstanceOf[IsTransient])
 
@@ -447,13 +452,18 @@ object FieldMetaData {
           createDefaultValue(fieldMapper, member, clsOfField, Some(typeOfField), colAnnotation)
         }
         catch {
-          case e:Exception => null
+          case e: Exception => {
+            var errorMessage = "Could not deduce Option[] type of field '" + name + "' of class " + parentMetaData.clasz.getName
+            if (!detectScalapOnClasspath()) errorMessage += "scalap option deduction not enabled. See: http://squeryl.org/scalap.html for more information."
+              throw new RuntimeException(errorMessage, e)
+          }
         }
 
       val deductionFailed =
         v match {
           case Some(None) => true
-          case a:Any  => (v == null)
+          case null => true
+          case a:Any  => false
         }
 
       if(deductionFailed) {
@@ -481,6 +491,14 @@ object FieldMetaData {
         else
           typeOfFieldOrTypeOfOption
 
+      if(typeOfFieldOrTypeOfOption == None.getClass) {
+        Utils.throwError(
+          "class " + parentMetaData.clasz.getCanonicalName +" used in table " +
+            parentMetaData.viewOrTable.name +
+            ", needs a zero arg constructor with sample values for Option[] field " +
+            name
+        )
+      }
 
       new FieldMetaData(
         parentMetaData,
@@ -578,7 +596,7 @@ object FieldMetaData {
         	printer.printSymbol(c)
       }
       val fullSig = baos.toString
-      val matcher = """\s%s : scala.Option\[scala\.(\w+)\]?""".format(member.getName).r.pattern.matcher(fullSig)
+      val matcher = """\s%s\s*:\s*scala.Option\[scala\.(\w+)\]?""".format(member.getName).r.pattern.matcher(fullSig)
       if (matcher.find) {
         matcher.group(1) match {
           case "Int" => Some(classOf[scala.Int])

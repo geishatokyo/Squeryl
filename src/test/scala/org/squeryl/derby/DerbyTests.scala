@@ -8,7 +8,7 @@ import org.squeryl.adapters.DerbyAdapter
 import org.squeryl.Session
 
 trait Derby_Connection extends DBConnector{
-  def connectToDb() : Option[() => Session] = {
+  def sessionCreator() : Option[() => Session] = {
     if(config.hasProps("derby.connectionString", "derby.user", "derby.password")){
       Class.forName("org.apache.derby.jdbc.EmbeddedDriver")
       Some(() => {
@@ -59,5 +59,6 @@ class Derby_MusicDb extends musicdb.MusicDbTestRun with Derby_Connection {
 
 class Derby_LeftJoinTest extends LeftJoinTest with Derby_Connection
 
+class Derby_LogicalBooleanObjTests extends LogicalBooleanObjTests with Derby_Connection
 
 

@@ -23,6 +23,8 @@ import collection.Set
 import collection.immutable.List
 import collection.mutable.HashSet
 import org.squeryl.internals.{FieldMetaData, StatementWriter, DatabaseAdapter}
+import org.squeryl.internals.ConstantStatementParam
+import org.squeryl.InternalFieldMapper
 
 
 class OracleAdapter extends DatabaseAdapter {
@@ -37,6 +39,8 @@ class OracleAdapter extends DatabaseAdapter {
   override def timestampTypeDeclaration = "timestamp"
 
   override def supportsAutoIncrementInColumnDeclaration: Boolean = false
+
+  override def supportsUnionQueryOptions = false
 
   override def postCreateTable(t: Table[_], printSinkWhenWriteOnlyMode: Option[String => Unit]) = {
 
@@ -113,8 +117,8 @@ class OracleAdapter extends DatabaseAdapter {
     sw.write(" on ")
     queryableExpressionNode.joinExpression.get.write(sw)
   }
-  
-  override def writePaginatedQueryDeclaration(qen: QueryExpressionElements, sw: StatementWriter) = {} 
+
+  override def writePaginatedQueryDeclaration(page: () => Option[(Int, Int)], qen: QueryExpressionElements, sw: StatementWriter) = {}
 
   override def writeQuery(qen: QueryExpressionElements, sw: StatementWriter) =
     if(qen.page == None)
@@ -218,7 +222,7 @@ class OracleAdapter extends DatabaseAdapter {
     sw.write(" REGEXP_LIKE(")
     left.write(sw)
     sw.write(",?)")
-    sw.addParam(pattern)
+    sw.addParam(ConstantStatementParam(InternalFieldMapper.stringTEF.createConstant(pattern)))    
   }
 
   override def fieldAlias(n: QueryableExpressionNode, fse: FieldSelectElement) =

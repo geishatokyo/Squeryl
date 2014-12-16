@@ -1,10 +1,10 @@
 package org.squeryl.sharding.scenario
 
 import java.util.Date
-import org.squeryl.sharding.ShardedSchemaTester
-import org.scalatest.matchers.MustMatchers
-import org.squeryl.{PrimitiveTypeMode, Schema, KeyedEntity}
+
 import org.squeryl.PrimitiveTypeMode._
+import org.squeryl.sharding.ShardedSchemaTester
+import org.squeryl.{KeyedEntity, Schema}
 
 /**
  *
@@ -22,7 +22,7 @@ case class Blog(var id : Long , var writerId : Long,var text : String, var date 
 
 object BlogDb extends Schema{
 
-  import PrimitiveTypeMode._
+  import org.squeryl.PrimitiveTypeMode._
 
   val users = table[User]
   val blogs = table[Blog]
@@ -34,18 +34,18 @@ object BlogDb extends Schema{
   on(blogs)(t => {
     declare(t.id is(primaryKey))
   })
-  
+
 }
 
 
 abstract class BlogDbTestRun extends ShardedSchemaTester {
   import org.squeryl.PrimitiveTypeMode._
-  import BlogDb._
+  import org.squeryl.sharding.scenario.BlogDb._
 
-  def schema: Schema = BlogDb
-
+  override def schema: Schema = BlogDb
 
   def selectShard(userId : Long) = {
+    println(targetShards)
     targetShards( (userId % targetShards.size).toInt)
   }
 
@@ -63,7 +63,7 @@ abstract class BlogDbTestRun extends ShardedSchemaTester {
         blogs.insert(blog)
       }
     }
-    
+
     val userIds = List(1L,2L,5L,6L,8L,2325L,132L)
     userIds.foreach(userId => {
       createUser(userId)

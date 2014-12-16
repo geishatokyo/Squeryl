@@ -1,11 +1,10 @@
 package org.squeryl.sharding
 
-import org.scalatest.matchers.{MustMatchers, ShouldMatchers}
-import org.scalatest.{FlatSpec, FunSuite}
 import org.jmock.Expectations._
 import org.junit.runner.RunWith
+import org.scalatest.FlatSpec
 import org.scalatest.junit.{JUnitRunner, MustMatchersForJUnit}
-import org.scalatest.mock.{JMockExpectations, JMockCycle}
+import org.scalatest.mock.{JMockCycle, JMockExpectations}
 
 
 /**
@@ -42,32 +41,32 @@ class ShardingDslTest extends FlatSpec with MustMatchersForJUnit {
 
   def useExecutions(e : JMockExpectations) {
     import e._
-    oneOf(session).use()
-    oneOf(session).bindToCurrentThread()
-    oneOf(session).unbindFromCurrentThread()
-    oneOf(session).cleanup()
-    oneOf(session).safeClose();will(returnValue(true))
-    oneOf(session).forceClose();will(returnValue(false))
+    e.oneOf(session).use()
+    e.oneOf(session).bindToCurrentThread()
+    e.oneOf(session).unbindFromCurrentThread()
+    e.oneOf(session).cleanup()
+    e.oneOf(session).safeClose();will(returnValue(true))
+    e.oneOf(session).forceClose();will(returnValue(false))
   }
 
   def transactionExecutions(e : JMockExpectations) {
     import e._
 
-    oneOf(session).use()
-    oneOf(session).beginTransaction()
-    oneOf(session).bindToCurrentThread()
-    oneOf(session).unbindFromCurrentThread()
-    oneOf(session).cleanup()
-    oneOf(session).commitTransaction()
-    oneOf(session).safeClose();will(returnValue(true))
-    oneOf(session).forceClose();will(returnValue(false))
+    e.oneOf(session).use()
+    e.oneOf(session).beginTransaction()
+    e.oneOf(session).bindToCurrentThread()
+    e.oneOf(session).unbindFromCurrentThread()
+    e.oneOf(session).cleanup()
+    e.oneOf(session).commitTransaction()
+    e.oneOf(session).safeClose();will(returnValue(true))
+    e.oneOf(session).forceClose();will(returnValue(false))
   }
 
   "use" should "execute query in write mode without transaction" in{
     val shardName = "shard1"
 
     expecting{ e => import e._
-      oneOf(shardedSessionRepo).apply(shardName,ShardMode.Write);will(returnValue(session))
+      e.oneOf(shardedSessionRepo).apply(shardName,ShardMode.Write);will(returnValue(session))
       allowing(session).shardMode;will(returnValue(ShardMode.Write))
       allowing(session).shardName;will(returnValue(shardName))
     useExecutions(e)
@@ -84,11 +83,12 @@ class ShardingDslTest extends FlatSpec with MustMatchersForJUnit {
   "read" should "execute query in read mode without transaction" in{
     val shardName = "shard1"
 
-    expecting{ e => import e._
-    oneOf(shardedSessionRepo).apply(shardName,ShardMode.Read);will(returnValue(session))
-    allowing(session).shardMode;will(returnValue(ShardMode.Read))
-    allowing(session).shardName;will(returnValue(shardName))
-    useExecutions(e)
+    expecting{ e =>
+      import e._
+      e.oneOf(shardedSessionRepo).apply(shardName,ShardMode.Read);will(returnValue(session))
+      allowing(session).shardMode;will(returnValue(ShardMode.Read))
+      allowing(session).shardName;will(returnValue(shardName))
+      useExecutions(e)
     }
 
     val v = dsl.read(shardName){
@@ -101,11 +101,12 @@ class ShardingDslTest extends FlatSpec with MustMatchersForJUnit {
   "write" should "execute query in read mode with transaction" in{
     val shardName = "shard1"
 
-    expecting{ e => import e._
-    oneOf(shardedSessionRepo).apply(shardName,ShardMode.Write);will(returnValue(session))
-    allowing(session).shardMode;will(returnValue(ShardMode.Write))
-    allowing(session).shardName;will(returnValue(shardName))
-    transactionExecutions(e)
+    expecting{ e =>
+      import e._
+      e.oneOf(shardedSessionRepo).apply(shardName,ShardMode.Write);will(returnValue(session))
+      allowing(session).shardMode;will(returnValue(ShardMode.Write))
+      allowing(session).shardName;will(returnValue(shardName))
+      transactionExecutions(e)
     }
 
     val v = dsl.write(shardName){
@@ -119,18 +120,19 @@ class ShardingDslTest extends FlatSpec with MustMatchersForJUnit {
 
     val shardName = "shard1"
 
-    expecting{ e => import e._
-    oneOf(shardedSessionRepo).apply(shardName,ShardMode.Write);will(returnValue(session))
-    allowing(session).shardMode;will(returnValue(ShardMode.Write))
-    allowing(session).shardName;will(returnValue(shardName))
+    expecting{ e =>
+      import e._
+      e.oneOf(shardedSessionRepo).apply(shardName,ShardMode.Write);will(returnValue(session))
+      allowing(session).shardMode;will(returnValue(ShardMode.Write))
+      allowing(session).shardName;will(returnValue(shardName))
 
-    oneOf(session).use()
-    oneOf(session).beginTransaction()
-    oneOf(session).bindToCurrentThread()
-    oneOf(session).unbindFromCurrentThread()
-    oneOf(session).cleanup()
-    oneOf(session).rollback();will(returnValue(true))
-    atLeast(1).of(session).forceClose();will(returnValue(false))
+      e.oneOf(session).use()
+      e.oneOf(session).beginTransaction()
+      e.oneOf(session).bindToCurrentThread()
+      e.oneOf(session).unbindFromCurrentThread()
+      e.oneOf(session).cleanup()
+      e.oneOf(session).rollback();will(returnValue(true))
+      e.atLeast(1).of(session).forceClose();will(returnValue(false))
     }
 
     mustThrowException{
@@ -144,20 +146,21 @@ class ShardingDslTest extends FlatSpec with MustMatchersForJUnit {
   def dummySession(shardName : String, mode : ShardMode.Value) = {
     new DummyShardedSession(shardName,mode)
   }
-  
-  "nested shard call" should "create session once for each shard/mode" in{
+
+  "nested shard call" should "create session once for each shard/mode" in {
 
     val shardName = "shard1"
     val shardName2 = "shard2"
     val shardName3 = "shard3"
 
-    expecting{ e => import e._
-    oneOf(shardedSessionRepo).apply(shardName,ShardMode.Write);will(returnValue(dummySession(shardName,ShardMode.Write)))
-    oneOf(shardedSessionRepo).apply(shardName2,ShardMode.Read);will(returnValue(dummySession(shardName2,ShardMode.Read)))
-    oneOf(shardedSessionRepo).apply(shardName2,ShardMode.Write);will(returnValue(dummySession(shardName2,ShardMode.Write)))
-    oneOf(shardedSessionRepo).apply(shardName3,ShardMode.Read);will(returnValue(dummySession(shardName3,ShardMode.Read)))
+    expecting{ e =>
+      import e._
+      e.oneOf(shardedSessionRepo).apply(shardName,ShardMode.Write);will(returnValue(dummySession(shardName,ShardMode.Write)))
+      e.oneOf(shardedSessionRepo).apply(shardName2,ShardMode.Read);will(returnValue(dummySession(shardName2,ShardMode.Read)))
+      e.oneOf(shardedSessionRepo).apply(shardName2,ShardMode.Write);will(returnValue(dummySession(shardName2,ShardMode.Write)))
+      e.oneOf(shardedSessionRepo).apply(shardName3,ShardMode.Read);will(returnValue(dummySession(shardName3,ShardMode.Read)))
     }
-    
+
     dsl.use(shardName){
       dsl.read(shardName2){
         dsl.use(shardName){

@@ -1,12 +1,12 @@
 /*******************************************************************************
  * Copyright 2010 Maxime Lévesque
- * 
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *   http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -50,7 +50,7 @@ class Table[T] private [squeryl] (n: String, c: Class[T], val schema: Schema, _p
           sess.connection.prepareStatement(sw.statement, autoIncPk)
         }
         case a:Any => sess.connection.prepareStatement(sw.statement)
-      }        
+      }
 
     try {
       val cnt = _dbAdapter.executeUpdateForInsert(sess, sw, st)
@@ -78,7 +78,7 @@ class Table[T] private [squeryl] (n: String, c: Class[T], val schema: Schema, _p
     finally {
       st.close
     }
-    
+
     val r = _callbacks.afterInsert(o).asInstanceOf[T]
 
     _setPersisted(r)
@@ -95,7 +95,7 @@ class Table[T] private [squeryl] (n: String, c: Class[T], val schema: Schema, _p
    * isInsert if statement is insert otherwise update
    */
   private def _batchedUpdateOrInsert(e: Iterable[T], fmdCallback: T => Iterable[FieldMetaData], isInsert: Boolean, checkOCC: Boolean):Unit = {
-    
+
     val it = e.iterator
 
     if(it.hasNext) {
@@ -124,7 +124,7 @@ class Table[T] private [squeryl] (n: String, c: Class[T], val schema: Schema, _p
       val st = sess.connection.prepareStatement(sw.statement)
 
       try {
-        dba.fillParamsInto(dba.convertParamsForJdbc(sw.paramsZ), st)
+        dba.fillParamsInto(sw.params, st)
         st.addBatch
 
         var updateCount = 1
@@ -141,7 +141,7 @@ class Table[T] private [squeryl] (n: String, c: Class[T], val schema: Schema, _p
 
           var idx = 1
           fmds.foreach(fmd => {
-            st.setObject(idx, dba.convertToJdbcValue(fmd.getNativeJdbcValue(eN)))
+            dba.setParamInto(st, FieldStatementParam(eN, fmd), idx)
             idx += 1
           })
           st.addBatch
@@ -173,13 +173,13 @@ class Table[T] private [squeryl] (n: String, c: Class[T], val schema: Schema, _p
   }
 
   /**
-   * Updates without any Optimistic Concurrency Control check 
+   * Updates without any Optimistic Concurrency Control check
    * @throws SquerylSQLException When a database error occurs or the update
    * does not result in 1 row
    */
-  def forceUpdate(o: T)(implicit ked: KeyedEntityDef[T,_]) =
+  def forceUpdate[K](o: T)(implicit ked: KeyedEntityDef[T,_]) =
     _update(o, false, ked)
-  
+
   /**
    * @throws SquerylSQLException When a database error occurs or the update
    * does not result in 1 row
@@ -230,7 +230,7 @@ class Table[T] private [squeryl] (n: String, c: Class[T], val schema: Schema, _p
 
             fields = Some(ck._fields.toList)
 
-            new EqualityExpression(new InputOnlyConstantExpressionNode(1), new InputOnlyConstantExpressionNode(1))
+            new EqualityExpression(InternalFieldMapper.intTEF.createConstant(1), InternalFieldMapper.intTEF.createConstant(1))
           })
 
           fields getOrElse (internals.Utils.throwError("No PK fields found"))
@@ -246,12 +246,12 @@ class Table[T] private [squeryl] (n: String, c: Class[T], val schema: Schema, _p
 
     _batchedUpdateOrInsert(e, buildFmds _, false, checkOCC)
   }
-  
+
   def update(s: T =>UpdateStatement):Int = {
 
     val vxn = new ViewExpressionNode(this)
     vxn.sample =
-       posoMetaData.createSample(FieldReferenceLinker.createCallBack(vxn))    
+       posoMetaData.createSample(FieldReferenceLinker.createCallBack(vxn))
     val us = s(vxn.sample)
     vxn.parent = Some(us)
 
@@ -273,7 +273,7 @@ class Table[T] private [squeryl] (n: String, c: Class[T], val schema: Schema, _p
     val dba = _dbAdapter
     val sw = new StatementWriter(dba)
     dba.writeUpdate(this, us, sw)
-    dba.executeUpdateAndCloseStatement(Session.currentSession, sw)    
+    dba.executeUpdateAndCloseStatement(Session.currentSession, sw)
   }
 
   def delete(q: Query[T]): Int = {
@@ -288,12 +288,12 @@ class Table[T] private [squeryl] (n: String, c: Class[T], val schema: Schema, _p
   }
 
   def deleteWhere(whereClause: T => LogicalBoolean)(implicit dsl: QueryDsl): Int =
-    delete(dsl.from(this)(t => dsl.where(whereClause(t)).select(t)))      
+    delete(dsl.from(this)(t => dsl.where(whereClause(t)).select(t)))
 
-  def delete[K](k: K)(implicit ked: KeyedEntityDef[T,K], dsl: QueryDsl): Boolean  = {
+  def delete[K](k: K)(implicit ked: KeyedEntityDef[T,K], dsl: QueryDsl, toCanLookup: K => CanLookup): Boolean  = {
     import dsl._
     val q = from(this)(a => dsl.where {
-      FieldReferenceLinker.createEqualityExpressionWithLastAccessedFieldReferenceAndConstant(ked.getId(a), k)
+      FieldReferenceLinker.createEqualityExpressionWithLastAccessedFieldReferenceAndConstant(ked.getId(a), k, toCanLookup(k))
     } select(a))
 
     lazy val z = q.headOption
@@ -308,8 +308,9 @@ class Table[T] private [squeryl] (n: String, c: Class[T], val schema: Schema, _p
       z.map(x => _callbacks.afterDelete(x.asInstanceOf[AnyRef]))
     }
 
-    assert(deleteCount <= 1, "Query :\n" + q.dumpAst + "\nshould have deleted at most 1 row but has deleted " + deleteCount)
-    deleteCount == 1
+    if(Session.currentSessionOption map { ses => ses.databaseAdapter.verifyDeleteByPK } getOrElse true)
+      assert(deleteCount <= 1, "Query :\n" + q.dumpAst + "\nshould have deleted at most 1 row but has deleted " + deleteCount)
+    deleteCount > 0
   }
 
   /**
