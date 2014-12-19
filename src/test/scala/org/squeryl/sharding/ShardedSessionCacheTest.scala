@@ -1,11 +1,11 @@
 package org.squeryl.sharding
 
-import org.scalatest.FlatSpec
-import org.scalatest.matchers.MustMatchers
-import org.scalatest.mock.{JMockCycle, EasyMockSugar}
 import org.jmock.Expectations._
 import org.junit.runner.RunWith
-import org.scalatest.junit.{JUnitRunner, JUnitSuite}
+import org.scalatest.FlatSpec
+import org.scalatest.junit.JUnitRunner
+import org.scalatest.matchers.MustMatchers
+import org.scalatest.mock.JMockCycle
 
 /**
  *
@@ -36,18 +36,19 @@ class ShardedSessionCacheTest extends FlatSpec with MustMatchers{
     val shardedSessionCache = new ShardedSessionCacheTestImpl
     val shardName1 = "shard1"
     val shardName2 = "shard2"
-    expecting{  e => import e._
-      oneOf(mockRepo).apply(shardName1,ShardMode.Read);will(returnValue(dSession(shardName1,ShardMode.Read)))
-      oneOf(mockRepo).apply(shardName2,ShardMode.Write);will(returnValue(dSession(shardName2,ShardMode.Write)))
+    expecting { e =>
+      import e._
+      e.oneOf(mockRepo).apply(shardName1,ShardMode.Read);will(returnValue(dSession(shardName1,ShardMode.Read)))
+      e.oneOf(mockRepo).apply(shardName2,ShardMode.Write);will(returnValue(dSession(shardName2,ShardMode.Write)))
     }
     whenExecuting {
-      shardedSessionCache.getSession(shardName1,ShardMode.Read) must not be(null)
-      shardedSessionCache.getSession(shardName2,ShardMode.Write) must not be(null)
-      shardedSessionCache.getSession(shardName2,ShardMode.Write) must not be(null)
-      shardedSessionCache.getSession(shardName1,ShardMode.Read) must not be(null)
-      shardedSessionCache.getSession(shardName1,ShardMode.Read) must not be(null)
-      shardedSessionCache.getSession(shardName2,ShardMode.Write) must not be(null)
-      shardedSessionCache.getSession(shardName2,ShardMode.Write) must not be(null)
+      shardedSessionCache.getSession(shardName1,ShardMode.Read) must not be null
+      shardedSessionCache.getSession(shardName2,ShardMode.Write) must not be null
+      shardedSessionCache.getSession(shardName2,ShardMode.Write) must not be null
+      shardedSessionCache.getSession(shardName1,ShardMode.Read) must not be null
+      shardedSessionCache.getSession(shardName1,ShardMode.Read) must not be null
+      shardedSessionCache.getSession(shardName2,ShardMode.Write) must not be null
+      shardedSessionCache.getSession(shardName2,ShardMode.Write) must not be null
     }
   }
 
@@ -56,17 +57,17 @@ class ShardedSessionCacheTest extends FlatSpec with MustMatchers{
     val shardName1 = "shard1"
 
     expecting{  e => import e._
-      oneOf(mockRepo).apply(shardName1,ShardMode.Read);will(returnValue(session))
+      e.oneOf(mockRepo).apply(shardName1,ShardMode.Read);will(returnValue(session))
       allowing(session).shardMode;will(returnValue(ShardMode.Read))
-      oneOf(session).forceClose() // read session is closed
-      oneOf(mockRepo).apply(shardName1,ShardMode.Write);will(returnValue(dSession(shardName1,ShardMode.Write)))
+      e.oneOf(session).forceClose() // read session is closed
+      e.oneOf(mockRepo).apply(shardName1,ShardMode.Write);will(returnValue(dSession(shardName1,ShardMode.Write)))
       //oneOf(session).forceClose()
     }
     whenExecuting {
-      shardedSessionCache.getSession(shardName1,ShardMode.Read) must not be(null)
-      shardedSessionCache.getSession(shardName1,ShardMode.Read) must not be(null)
-      shardedSessionCache.getSession(shardName1,ShardMode.Write) must not be(null)
-      shardedSessionCache.getSession(shardName1,ShardMode.Write) must not be(null)
+      shardedSessionCache.getSession(shardName1,ShardMode.Read) must not be null
+      shardedSessionCache.getSession(shardName1,ShardMode.Read) must not be null
+      shardedSessionCache.getSession(shardName1,ShardMode.Write) must not be null
+      shardedSessionCache.getSession(shardName1,ShardMode.Write) must not be null
     }
   }
 
@@ -75,14 +76,14 @@ class ShardedSessionCacheTest extends FlatSpec with MustMatchers{
     val shardName1 = "shard1"
 
     expecting{  e => import e._
-      oneOf(mockRepo).apply(shardName1,ShardMode.Write);will(returnValue(dSession(shardName1,ShardMode.Write)))
+      e.oneOf(mockRepo).apply(shardName1,ShardMode.Write);will(returnValue(dSession(shardName1,ShardMode.Write)))
     }
     whenExecuting {
-      shardedSessionCache.getSession(shardName1,ShardMode.Write) must not be(null)
-      shardedSessionCache.getSession(shardName1,ShardMode.Write) must not be(null)
-      shardedSessionCache.getSession(shardName1,ShardMode.Read) must not be(null)
-      shardedSessionCache.getSession(shardName1,ShardMode.Read) must not be(null)
-      shardedSessionCache.getSession(shardName1,ShardMode.Write) must not be(null)
+      shardedSessionCache.getSession(shardName1,ShardMode.Write) must not be null
+      shardedSessionCache.getSession(shardName1,ShardMode.Write) must not be null
+      shardedSessionCache.getSession(shardName1,ShardMode.Read) must not be null
+      shardedSessionCache.getSession(shardName1,ShardMode.Read) must not be null
+      shardedSessionCache.getSession(shardName1,ShardMode.Write) must not be null
     }
   }
 
@@ -91,16 +92,16 @@ class ShardedSessionCacheTest extends FlatSpec with MustMatchers{
     val shardName1 = "shard1"
 
     expecting{  e => import e._
-      oneOf(mockRepo).apply(shardName1,ShardMode.Write);will(returnValue(dSession(shardName1,ShardMode.Write)))
-      oneOf(mockRepo).apply(shardName1,ShardMode.Write);will(returnValue(dSession(shardName1,ShardMode.Write)))
+      e.oneOf(mockRepo).apply(shardName1,ShardMode.Write);will(returnValue(dSession(shardName1,ShardMode.Write)))
+      e.oneOf(mockRepo).apply(shardName1,ShardMode.Write);will(returnValue(dSession(shardName1,ShardMode.Write)))
     }
     whenExecuting {
       val ses =  shardedSessionCache.getSession(shardName1,ShardMode.Write)
-      ses must not be(null)
-      shardedSessionCache.getSession(shardName1,ShardMode.Write) must not be(null)
+      ses must not be null
+      shardedSessionCache.getSession(shardName1,ShardMode.Write) must not be null
       shardedSessionCache.removeSession(ses)
-      shardedSessionCache.getSession(shardName1,ShardMode.Write) must not be(null)
-      shardedSessionCache.getSession(shardName1,ShardMode.Write) must not be(null)
+      shardedSessionCache.getSession(shardName1,ShardMode.Write) must not be null
+      shardedSessionCache.getSession(shardName1,ShardMode.Write) must not be null
     }
   }
 

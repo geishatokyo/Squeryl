@@ -1,14 +1,15 @@
 package org.squeryl.sharding
 
-import org.scalatest.FlatSpec
-import org.scalatest.matchers.MustMatchers
-import org.junit.runner.RunWith
-import org.scalatest.junit.JUnitRunner
-import org.scalatest.mock.JMockCycle
 import java.sql.Connection
-import org.squeryl.adapters.H2Adapter
-import org.squeryl.{SquerylException, Session}
+
 import org.jmock.Expectations._
+import org.junit.runner.RunWith
+import org.scalatest.FlatSpec
+import org.scalatest.junit.JUnitRunner
+import org.scalatest.matchers.MustMatchers
+import org.scalatest.mock.JMockCycle
+import org.squeryl.adapters.H2Adapter
+import org.squeryl.{Session, SquerylException}
 
 /**
  *
@@ -36,10 +37,10 @@ class ShardedSessionTest extends FlatSpec with MustMatchers {
   }
   "safeClose" should "close once" in{
 
-    expecting{ e => import e._
-      exactly(2).of(connection).close()
+    expecting { e =>
+      e.exactly(2).of(connection).close()
     }
-    
+
     val session = this.session()
     session.use()
     session.use()
@@ -56,8 +57,8 @@ class ShardedSessionTest extends FlatSpec with MustMatchers {
   }
   "forceClose" should "always close" in {
 
-    expecting{ e => import e._
-    exactly(2).of(connection).close()
+    expecting { e =>
+      e.exactly(2).of(connection).close()
     }
 
     val session = this.session()
@@ -70,14 +71,14 @@ class ShardedSessionTest extends FlatSpec with MustMatchers {
     session.safeClose() must be(false)
     mustThrowError(session.use())
   }
-  
+
   "transaction" should  "commit" in{
 
     expecting{ e => import e._
       allowing(connection).getAutoCommit();will(returnValue(true))
       allowing(connection).setAutoCommit(false)
       allowing(connection).setAutoCommit(true)
-      exactly(2).of(connection).commit
+      e.exactly(2).of(connection).commit()
     }
     val session = this.session()
     session.commitTransaction() must be(false)
@@ -97,10 +98,10 @@ class ShardedSessionTest extends FlatSpec with MustMatchers {
   "transaction" should "rollback" in{
 
     expecting{ e => import e._
-    allowing(connection).getAutoCommit();will(returnValue(true))
+      allowing(connection).getAutoCommit();will(returnValue(true))
       allowing(connection).setAutoCommit(false)
       allowing(connection).setAutoCommit(true)
-    exactly(2).of(connection).rollback
+      e.exactly(2).of(connection).rollback()
     }
     val session = this.session()
     session.rollback() must be(false)

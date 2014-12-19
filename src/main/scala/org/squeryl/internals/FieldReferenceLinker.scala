@@ -21,8 +21,16 @@ import org.squeryl.dsl.ast._
 import org.squeryl.dsl.CompositeKey
 import org.squeryl.dsl.TypedExpression
 import java.lang.reflect.{Field, Method}
+import org.squeryl._
 
 object FieldReferenceLinker {
+
+  def clearThreadLocalState() {
+    _yieldValues.remove()
+    __lastAccessedFieldReference.remove()
+    _compositeKeyMembers.remove()
+    _yieldInspectionTL.remove()
+  }
 
   def pushExpressionOrCollectValue[T](e: ()=>TypedExpression[T,_]): T = {
     if (isYieldInspectionMode) {
@@ -164,21 +172,23 @@ object FieldReferenceLinker {
       case None => org.squeryl.internals.Utils.throwError("Thread local does not have a last accessed field... this is a severe bug !")
   }
 
-  def createEqualityExpressionWithLastAccessedFieldReferenceAndConstant(e: Any, c: Any): LogicalBoolean = {
+  def createEqualityExpressionWithLastAccessedFieldReferenceAndConstant(e: Any, c: Any, l: CanLookup): LogicalBoolean = {
 
-    if(e.isInstanceOf[CompositeKey])
-      e.asInstanceOf[CompositeKey].buildEquality(c.asInstanceOf[CompositeKey])
-    else
-      createEqualityExpressionWithLastAccessedFieldReferenceAndConstant(c)    
+    l match {
+      case CompositeKeyLookup =>
+        e.asInstanceOf[CompositeKey].buildEquality(c.asInstanceOf[CompositeKey])
+      case s: SimpleKeyLookup[_] =>
+        createEqualityExpressionWithLastAccessedFieldReferenceAndConstant(c, Some(s))
+      case UnknownCanLookup =>
+        createEqualityExpressionWithLastAccessedFieldReferenceAndConstant(c, None)
+    }
   }
 
-  def createEqualityExpressionWithLastAccessedFieldReferenceAndConstant(c: Any): LogicalBoolean = {
-    val fr = _takeLastAccessedUntypedFieldReference
+  def createEqualityExpressionWithLastAccessedFieldReferenceAndConstant(c: Any, lOpt: Option[SimpleKeyLookup[_]]): LogicalBoolean = {
+    val left = _takeLastAccessedUntypedFieldReference
+    val right = lOpt map (l => l.convert.asInstanceOf[Any => TypedExpression[_, _]](c)) getOrElse (new InputOnlyConstantExpressionNode(c))
 
-    new BinaryOperatorNodeLogicalBoolean(
-      fr,
-      new InputOnlyConstantExpressionNode(c),
-      "=")
+    new BinaryOperatorNodeLogicalBoolean(left, right, "=")
   }
   
   /**

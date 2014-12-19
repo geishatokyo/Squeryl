@@ -1,10 +1,10 @@
 package org.squeryl.sharding
 
-import builder.SimpleShardedSessionBuilder
 import org.scalatest._
-import matchers.{MustMatchers, ShouldMatchers}
-import org.squeryl.{PrimitiveTypeMode, SessionFactory}
+import org.scalatest.matchers.MustMatchers
+import org.squeryl.PrimitiveTypeMode
 import org.squeryl.framework.FileConfigReader
+import org.squeryl.sharding.builder.SimpleShardedSessionBuilder
 
 /**
  *
@@ -25,26 +25,26 @@ abstract class ShardedDbTestBase extends FunSuite with MustMatchers with BeforeA
   val ignoredTests : List[String] = Nil
 
   override def beforeAll(){
-    super.beforeAll
+    super.beforeAll()
     if(skipTest_?){
-      println("Test:" + getClass() + " will be skipped")
+      println("Test:" + getClass + " will be skipped")
       notIgnored = false
     }else{
       notIgnored = initializeSessions()
     }
   }
 
-  override protected def runTest(testName: String,
+  protected def runTest(testName: String,
                                  reporter: Reporter,
                                  stopper: Stopper,
                                  configMap: Map[String, Any],
                                  tracker: Tracker) {
 
-    if(!notIgnored || ignoredTests.find(_ == testName).isDefined){
-      //reporter(TestIgnored(new Ordinal(0), suiteName, Some(this.getClass.getName),testName))
+    if(!notIgnored || ignoredTests.contains(testName)){
       return
     }
-    super.runTest(testName, reporter, stopper, configMap, tracker)
+    val args = Args(reporter, stopper, configMap = new ConfigMap(configMap), tracker = tracker)
+    super.runTest(testName, args)
   }
 }
 
@@ -68,7 +68,7 @@ trait SimpleShardingBuilderInitializer{
     for(settingSet <- shardSettings){
       println("Set shard:" + settingSet._1)
       val builder = createBuilder()
-      
+
       builder.name = settingSet._1
       _targetShards = _targetShards :+ builder.name
       for(c <- settingSet._2){

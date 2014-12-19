@@ -25,7 +25,7 @@ class BasicTypes extends KeyedEntity[Long]{
 
 class MySQLDataTypeTests extends FlatSpec with ShouldMatchers with DBConnector {
 
-  def connectToDb() : Option[() => Session] = {
+  override def sessionCreator() : Option[() => AbstractSession] = {
     if(config.hasProps("mysql.connectionString")){
       Class.forName("com.mysql.jdbc.Driver")
       Some(() => {
@@ -41,14 +41,14 @@ class MySQLDataTypeTests extends FlatSpec with ShouldMatchers with DBConnector {
       None
     }
   }
-  
-  SessionFactory.concreteFactory = connectToDb()
+
+  SessionFactory.concreteFactory = sessionCreator()
   if(SessionFactory.concreteFactory.isDefined){
     transaction{
       MySQLTestScheme.drop
       MySQLTestScheme.create
     }
-    
+
     "MySQL type" should "generate such types" in {
       transaction{
         val out = new ByteArrayOutputStream()
@@ -57,33 +57,31 @@ class MySQLDataTypeTests extends FlatSpec with ShouldMatchers with DBConnector {
         printer.flush()
         val s = new String(out.toByteArray,"utf-8")
         println(s)
-        
+
         s should include ("i int")
         s should include ("str varchar(128)")
         s should include ("time datetime")
-        
+
       }
     }
-    
+
     "Types" should "reserver type accuracy" in {
       val data = new BasicTypes()
       transaction{
         MySQLTestScheme.basicTypes.insert(data)
       }
-      
-      
+
+
       transaction{
         val read = MySQLTestScheme.basicTypes.lookup(data.id).get
-      
+
         println(read)
         (data.time.getTime / 1000) should equal(read.time.getTime / 1000)
-        
-        
+
+
       }
-      
+
     }
   }
-  
-  
 
 }

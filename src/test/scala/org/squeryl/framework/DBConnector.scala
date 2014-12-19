@@ -1,10 +1,10 @@
 package org.squeryl.framework
 
-import org.squeryl.Session
+import org.squeryl.AbstractSession
 
 trait DBConnector {
 
-  def connectToDb() : Option[() => Session]
+  def sessionCreator() : Option[() => AbstractSession]
 
   lazy val config = {
     new FileConfigReader("org.squeryl.tests.cfg")

@@ -16,12 +16,11 @@
 package org.squeryl.dsl.ast
 
 
-import collection.mutable.ArrayBuffer
+import scala.collection.mutable.ArrayBuffer
+
 import org.squeryl.internals._
 import org.squeryl.dsl._
-import org.squeryl.{Query, Schema, Session}
-import javax.management.RuntimeErrorException
-import java.sql.ResultSet
+import org.squeryl.Session
 
 trait ExpressionNode {
 
@@ -100,14 +99,26 @@ trait ExpressionNode {
 
     inhibitWhen(c.value == None)
   }
+
+  def cast[A, T](typ: String)(implicit tef: TypedExpressionFactory[A, T]): TypedExpression[A,T] =
+    new CastExpressionNode(this, typ) with TypedExpression[A, T] {
+      override def mapper = tef.createOutMapper
+    }
 }
 
+class ListExpressionNode(override val children: List[ExpressionNode]) extends ExpressionNode {
+  override def doWrite(sw: StatementWriter) {
+    sw.writeNodesWithSeparator(children, ", ", false)
+  }
+}
 
-trait ListExpressionNode extends ExpressionNode {
-
-  def quotesElement = false
-  
-  def isEmpty: Boolean
+class RowValueConstructorNode(override val children: List[ExpressionNode]) extends ExpressionNode {
+  override def doWrite(sw: StatementWriter) {
+    // sw.write("ROW")
+    sw.write("(")
+    sw.writeNodesWithSeparator(children, ", ", false)
+    sw.write(")")
+  }
 }
 
 class EqualityExpression(override val left: TypedExpression[_,_], override val right: TypedExpression[_,_]) extends BinaryOperatorNodeLogicalBoolean(left, right, "=") {
@@ -195,10 +206,54 @@ class TernaryOperatorNode(val first: ExpressionNode, val second: ExpressionNode,
     _inhibitedByWhen || first.inhibited || second.inhibited || third.inhibited
 }
 
-trait LogicalBoolean extends ExpressionNode  {
+trait LogicalBoolean extends ExpressionNode {
 
-  def and(b: LogicalBoolean) = new BinaryOperatorNodeLogicalBoolean(this, b, "and")
-  def or(b: LogicalBoolean) = new BinaryOperatorNodeLogicalBoolean(this, b, "or")
+  def and(b: LogicalBoolean): LogicalBoolean =
+    new BinaryOperatorNodeLogicalBoolean(this, b, "and")
+
+  def or(b: LogicalBoolean): LogicalBoolean =
+    new BinaryOperatorNodeLogicalBoolean(this, b, "or")
+
+  def and(b: Option[LogicalBoolean]): LogicalBoolean =
+    b.map(this and _).getOrElse(this)
+
+  def or(b: Option[LogicalBoolean]): LogicalBoolean =
+    b.map(this or _).getOrElse(this)
+
+}
+
+object TrueLogicalBoolean extends LogicalBoolean {
+
+  override def and(b: LogicalBoolean) = b
+
+  override def or(b: LogicalBoolean) = this
+
+  override def doWrite(sw: StatementWriter) {
+    sw.write("(1=1)")
+  }
+
+}
+
+object FalseLogicalBoolean extends LogicalBoolean {
+
+  override def and(b: LogicalBoolean) = this
+
+  override def or(b: LogicalBoolean) = b
+
+  override def doWrite(sw: StatementWriter) {
+    sw.write("(1=0)")
+  }
+
+}
+
+object LogicalBoolean {
+
+  def and(conditions: Seq[LogicalBoolean]): LogicalBoolean =
+    conditions.fold(TrueLogicalBoolean)(_ and _)
+
+  def or(conditions: Seq[LogicalBoolean]): LogicalBoolean =
+    conditions.fold(FalseLogicalBoolean)(_ or _)
+
 }
 
 
@@ -219,7 +274,7 @@ trait BaseColumnAttributeAssignment {
     findAttribute[A](m) != None
 
   def findAttribute[A <: ColumnAttribute](implicit m: Manifest[A]) =
-    columnAttributes.find(ca => m.erasure.isAssignableFrom(ca.getClass))  
+    columnAttributes.find(ca => m.erasure.isAssignableFrom(ca.getClass))
 }
 
 class ColumnGroupAttributeAssignment(cols: Seq[FieldMetaData], columnAttributes_ : Seq[ColumnAttribute])
@@ -280,43 +335,58 @@ class TokenExpressionNode(val token: String) extends ExpressionNode {
 }
 
 
-class InputOnlyConstantExpressionNode(v: Any) extends ConstantTypedExpression[Any,Any](v, NoOpOutMapper, v.asInstanceOf[AnyRef])
+private [squeryl] class InputOnlyConstantExpressionNode(v: Any) extends ConstantTypedExpression[Any,Any](v, v.asInstanceOf[AnyRef], None)
 
-class ConstantTypedExpression[A1,T1](val value: A1, override val mapper: OutMapper[A1], nativeJdbcValue: AnyRef) extends TypedExpression[A1,T1] {
+class ConstantTypedExpression[A1,T1](val value: A1, val nativeJdbcValue: AnyRef, i: Option[TypedExpressionFactory[A1,_]]) extends TypedExpression[A1,T1] {
 
   private def needsQuote = value.isInstanceOf[String]
 
+  override def mapper: OutMapper[A1] = i.get.createOutMapper
+  
+  override def sample = 
+    if(value != null) value
+    else i.get.sample
+
+  def jdbcClass = 
+    i.map(_.jdbcSample).getOrElse(nativeJdbcValue).getClass
+    
+    if(nativeJdbcValue != null) nativeJdbcValue.getClass
+    else mapper.jdbcClass
+    
   def doWrite(sw: StatementWriter) = {
-    if(sw.isForDisplay) {
-      if(value == null)
-        sw.write("null")
-      else if(needsQuote) {
-        sw.write("'")
-        sw.write(value.toString)
-        sw.write("'")
-      }
-      else
-        sw.write(value.toString)
+    if(sw.isForDisplay) {      
+      sw.write(displayAsString)
     }
     else {
       sw.write("?")
-      sw.addParam(nativeJdbcValue)
+      sw.addParam(ConstantStatementParam(this))
     }
   }
+    
+  def displayAsString =
+      if(value == null)
+        "null"
+      else if(needsQuote)
+        "'" + value.toString + "'"      
+      else
+        value.toString    
+  
   override def toString = 'ConstantTypedExpression + ":" + value
 }
 
-class ConstantExpressionNodeList[T](val value: Traversable[T]) extends ExpressionNode {
+class ConstantExpressionNodeList[T](val value: Traversable[T], mapper: OutMapper[_]) extends ExpressionNode {
 
   def isEmpty =
     value == Nil
 
   def doWrite(sw: StatementWriter) =
     if(sw.isForDisplay)
-      sw.write(this.value.map(e=>"'" +e+"'").mkString(","))
+      sw.write(ConstantExpressionNodeList.this.value.map(e=>"'" +e+"'").mkString(","))
     else {
-      sw.write(this.value.toSeq.map(z => "?").mkString(","))
-      this.value.foreach(z => sw.addParam(z.asInstanceOf[AnyRef]))
+      sw.write(ConstantExpressionNodeList.this.value.toSeq.map(z => "?").mkString(","))
+      ConstantExpressionNodeList.this.value.foreach(z => 
+        sw.addParam(ConstantExpressionNodeListParam(z.asInstanceOf[AnyRef], ConstantExpressionNodeList.this))
+      )
     }
 }
 
@@ -384,7 +454,7 @@ class PrefixOperatorNode
 
   override def children = List(child)
 
-  override def inhibited = child.inhibited
+  override def inhibited = _inhibitedByWhen || child.inhibited
 
   override def toString = 'PrefixOperatorNode + ":" + operatorToken + inhibitedFlagForAstDump
 
@@ -485,7 +555,7 @@ class OrderByExpression(a: OrderByArg) extends ExpressionNode {
 
   private def e = a.e
   
-  override def inhibited = e.inhibited
+  override def inhibited = _inhibitedByWhen || e.inhibited
 
   def doWrite(sw: StatementWriter) = {
     e.write(sw)
@@ -542,6 +612,9 @@ class RightHandSideOfIn[A](val ast: ExpressionNode, val isIn: Option[Boolean] = 
     if(ast.isInstanceOf[ConstantExpressionNodeList[_]]) {
       ast.asInstanceOf[ConstantExpressionNodeList[_]].isEmpty
     }
+    else if(ast.isInstanceOf[ListExpressionNode]) {
+      ast.asInstanceOf[ListExpressionNode].children.isEmpty
+    }
     else false
 
   override def doWrite(sw: StatementWriter) =
@@ -550,4 +623,38 @@ class RightHandSideOfIn[A](val ast: ExpressionNode, val isIn: Option[Boolean] = 
     else {
       ast.doWrite(sw)
     }
+}
+
+class UnionExpressionNode(val kind: String, val ast: ExpressionNode) extends ExpressionNode {
+  def doWrite(sw: StatementWriter) = {
+    sw.write(kind)
+    sw.nextLine
+    sw.write("(")
+    sw.nextLine
+    sw.indent(1)
+    ast.write(sw)
+    sw.unindent(1)
+    sw.write(")")
+    sw.nextLine
+  }
+
+  override def toString = {
+    'UnionExpressionNode + "[with " + kind  + "]"
+  }
+
+  override def children =
+    List(ast)
+}
+
+class QueryValueExpressionNode[A1, T1](val ast: ExpressionNode, override val mapper: OutMapper[A1]) extends TypedExpression[A1, T1] {
+  def doWrite(sw:StatementWriter) = {
+    ast.write(sw)
+  }
+
+  override def toString = {
+    'QueryValueExpressionNode + ""
+  }
+
+  override def children =
+    List(ast)
 }
